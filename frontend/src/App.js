@@ -361,6 +361,7 @@ export default function HybridRAGInterface() {
 
   // UI State
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [dragActive, setDragActive] = useState(false);
 
   // Welcome Screen State (always show on launch)
   const [showWelcome, setShowWelcome] = useState(true);
@@ -395,9 +396,15 @@ export default function HybridRAGInterface() {
   };
 
   // ========== UPLOAD HANDLER ==========
-  const handleFileUpload = async (e) => {
-    const uploadedFile = e.target.files[0];
+  const processFile = async (uploadedFile) => {
     if (!uploadedFile) return;
+
+    // Basic client-side validation
+    if (!/\.(xlsx|xls|csv)$/i.test(uploadedFile.name)) {
+      setUploadStatus('error');
+      setUploadError('Invalid file type. Please use an .xlsx, .xls, or .csv file.');
+      return;
+    }
 
     // Clear previous state
     setUploadError(null);
@@ -406,7 +413,7 @@ export default function HybridRAGInterface() {
     setQuery('');
 
     setUploadStatus('uploading');
-    setUploadProgress('Uploading and processing file...');
+    setUploadProgress('Processing (embeddings + knowledge graph). This can take a few minutes on first run...');
 
     try {
       const formData = new FormData();
@@ -445,6 +452,26 @@ export default function HybridRAGInterface() {
 
     // Reset file input to allow re-uploading the same file
     setFileInputKey(k => k + 1);
+  };
+
+  const handleFileUpload = (e) => {
+    processFile(e.target.files[0]);
+  };
+
+  // ========== DRAG & DROP ==========
+  const handleDrag = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'dragenter' || e.type === 'dragover') setDragActive(true);
+    else if (e.type === 'dragleave') setDragActive(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const dropped = e.dataTransfer?.files?.[0];
+    if (dropped) processFile(dropped);
   };
 
   // ========== SEARCH HANDLER ==========
@@ -596,7 +623,17 @@ export default function HybridRAGInterface() {
                 </div>
               )}
 
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-indigo-300 hover:bg-indigo-50/30 transition-all">
+              <div
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-all ${
+                  dragActive
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30'
+                }`}
+              >
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
@@ -609,7 +646,9 @@ export default function HybridRAGInterface() {
                   <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
                     <FileText className="w-8 h-8 text-slate-400" />
                   </div>
-                  <p className="text-gray-700 font-medium mb-1">Upload Excel or CSV</p>
+                  <p className="text-gray-700 font-medium mb-1">
+                    {dragActive ? 'Drop the file here' : 'Drag & drop a file, or click to browse'}
+                  </p>
                   <p className="text-sm text-slate-400">.xlsx, .xls, .csv</p>
                 </label>
               </div>

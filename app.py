@@ -92,23 +92,29 @@ def auto_import_to_neo4j(df):
                 FOR (k:Keyword) REQUIRE k.keyword_id IS UNIQUE
             """)
 
-            # Import Papers
-            print("[PAPERS] Importing papers...")
+            # Build batch payloads, then import with a few UNWIND queries (far fewer
+            # round-trips than one query per row -> dramatically faster).
+            papers, author_links, keyword_links = [], [], []
+
+            def _collect_keywords(raw, ktype, doi):
+                if isinstance(raw, str):
+                    kws = parse_keyword_field(raw)
+                elif isinstance(raw, list):
+                    kws = raw
+                else:
+                    kws = []
+                for kw in kws:
+                    keyword_links.append({
+                        "keyword_id": make_stable_id("KEYWORD", kw),
+                        "name": kw, "type": ktype, "paper_id": doi
+                    })
+
             for _, row in df.iterrows():
                 doi = safe_str(row.get("doi", "")).strip()
                 if not doi:
                     continue
 
-                session.run("""
-                    MERGE (p:Paper {paper_id: $paper_id})
-                    SET p.title = $title,
-                        p.abstract = $abstract,
-                        p.date = $date,
-                        p.journal_name = $journal_name,
-                        p.doi = $doi,
-                        p.url = $url,
-                        p.citations = $citations
-                """, {
+                papers.append({
                     "paper_id": doi,
                     "title": row["title"],
                     "abstract": row["abstract"],
@@ -119,95 +125,54 @@ def auto_import_to_neo4j(df):
                     "citations": row.get("citations", "")
                 })
 
-            # Import Authors and Relationships
-            print("[AUTHORS] Importing authors...")
-            for _, row in df.iterrows():
-                doi = safe_str(row.get("doi", "")).strip()
-                if not doi:
-                    continue
-
                 for author_name in split_authors(row.get("authors", "")):
-                    author_id = make_stable_id("AUTHOR", author_name)
+                    author_links.append({
+                        "author_id": make_stable_id("AUTHOR", author_name),
+                        "name": author_name,
+                        "paper_id": doi
+                    })
 
-                    # Create author
-                    session.run("""
-                        MERGE (a:Author {author_id: $author_id})
-                        SET a.name = $name
-                    """, {"author_id": author_id, "name": author_name})
-
-                    # Create relationship
-                    session.run("""
-                        MATCH (a:Author {author_id: $author_id})
-                        MATCH (p:Paper {paper_id: $paper_id})
-                        MERGE (a)-[:AUTHORED]->(p)
-                    """, {"author_id": author_id, "paper_id": doi})
-
-            # Import Keywords (author_keywords and keywords_plus)
-            print("[KEYWORDS] Importing keywords...")
-            for _, row in df.iterrows():
-                doi = safe_str(row.get("doi", "")).strip()
-                if not doi:
-                    continue
-
-                # Process author keywords
-                author_kw_raw = row.get("author_keywords", "")
-                if isinstance(author_kw_raw, str):
-                    author_keywords = parse_keyword_field(author_kw_raw)
-                elif isinstance(author_kw_raw, list):
-                    author_keywords = author_kw_raw
-                else:
-                    author_keywords = []
-
-                for kw in author_keywords:
-                    kw_id = make_stable_id("KEYWORD", kw)
-                    session.run("""
-                        MERGE (k:Keyword {keyword_id: $keyword_id})
-                        SET k.name = $name, k.type = 'author'
-                    """, {"keyword_id": kw_id, "name": kw})
-                    session.run("""
-                        MATCH (p:Paper {paper_id: $paper_id})
-                        MATCH (k:Keyword {keyword_id: $keyword_id})
-                        MERGE (p)-[:HAS_KEYWORD {type: 'author'}]->(k)
-                    """, {"paper_id": doi, "keyword_id": kw_id})
-
-                # Process keywords plus / index keywords
-                kw_plus_raw = row.get("keywords_plus", "")
-                if isinstance(kw_plus_raw, str):
-                    keywords_plus = parse_keyword_field(kw_plus_raw)
-                elif isinstance(kw_plus_raw, list):
-                    keywords_plus = kw_plus_raw
-                else:
-                    keywords_plus = []
-
-                for kw in keywords_plus:
-                    kw_id = make_stable_id("KEYWORD", kw)
-                    session.run("""
-                        MERGE (k:Keyword {keyword_id: $keyword_id})
-                        SET k.name = $name, k.type = 'index'
-                    """, {"keyword_id": kw_id, "name": kw})
-                    session.run("""
-                        MATCH (p:Paper {paper_id: $paper_id})
-                        MATCH (k:Keyword {keyword_id: $keyword_id})
-                        MERGE (p)-[:HAS_KEYWORD {type: 'index'}]->(k)
-                    """, {"paper_id": doi, "keyword_id": kw_id})
-
-                # Also process legacy 'sources' field if present (for backward compatibility)
+                _collect_keywords(row.get("author_keywords", ""), "author", doi)
+                _collect_keywords(row.get("keywords_plus", ""), "index", doi)
                 if "sources" in df.columns:
                     for kw in split_keywords(row.get("sources", "")):
-                        kw_id = make_stable_id("KEYWORD", kw)
-                        session.run("""
-                            MERGE (k:Keyword {keyword_id: $keyword_id})
-                            SET k.name = $name
-                        """, {"keyword_id": kw_id, "name": kw})
-                        session.run("""
-                            MATCH (p:Paper {paper_id: $paper_id})
-                            MATCH (k:Keyword {keyword_id: $keyword_id})
-                            MERGE (p)-[:HAS_KEYWORD]->(k)
-                        """, {"paper_id": doi, "keyword_id": kw_id})
+                        keyword_links.append({
+                            "keyword_id": make_stable_id("KEYWORD", kw),
+                            "name": kw, "type": "", "paper_id": doi
+                        })
+
+            print(f"[PAPERS] Importing {len(papers)} papers...")
+            session.run("""
+                UNWIND $rows AS row
+                MERGE (p:Paper {paper_id: row.paper_id})
+                SET p.title = row.title, p.abstract = row.abstract, p.date = row.date,
+                    p.journal_name = row.journal_name, p.doi = row.doi,
+                    p.url = row.url, p.citations = row.citations
+            """, {"rows": papers})
+
+            print(f"[AUTHORS] Importing {len(author_links)} author links...")
+            session.run("""
+                UNWIND $rows AS row
+                MERGE (a:Author {author_id: row.author_id})
+                SET a.name = row.name
+                WITH a, row
+                MATCH (p:Paper {paper_id: row.paper_id})
+                MERGE (a)-[:AUTHORED]->(p)
+            """, {"rows": author_links})
+
+            if keyword_links:
+                print(f"[KEYWORDS] Importing {len(keyword_links)} keyword links...")
+                session.run("""
+                    UNWIND $rows AS row
+                    MERGE (k:Keyword {keyword_id: row.keyword_id})
+                    SET k.name = row.name, k.type = row.type
+                    WITH k, row
+                    MATCH (p:Paper {paper_id: row.paper_id})
+                    MERGE (p)-[:HAS_KEYWORD {type: row.type}]->(k)
+                """, {"rows": keyword_links})
 
             # Verify import
-            result = session.run("MATCH (n) RETURN count(n) as count")
-            count = result.single()["count"]
+            count = session.run("MATCH (n) RETURN count(n) as count").single()["count"]
             print(f"[OK] Imported {count} nodes to Neo4j")
 
     finally:

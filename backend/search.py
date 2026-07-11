@@ -9,9 +9,6 @@ import shutil
 from sentence_transformers import SentenceTransformer
 from chromadb import PersistentClient
 from langchain_ollama import OllamaLLM
-from langchain_community.graphs import Neo4jGraph
-from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
-from langchain_core.prompts import PromptTemplate
 from neo4j import GraphDatabase  # Plain driver for direct Cypher (no APOC needed)
 from backend.etl import safe_str
 
@@ -126,52 +123,19 @@ class HybridSearchEngine:
         self.collection = PersistentClient(path=db_path).get_collection(collection_name)
         print("[OK] Vector store connected")
 
-        # Knowledge graph - use plain neo4j driver for direct Cypher (no APOC needed)
+        # Knowledge graph - plain neo4j driver for direct Cypher (no APOC).
+        # The LangChain Neo4jGraph/GraphCypherQAChain path is intentionally not used:
+        # it runs a schema refresh on every init and the app relies on the direct-Cypher
+        # patterns in graph_search() instead.
         self.graph_chain = None
+        self.graph = None
         self.neo4j_driver = None
         try:
-            # Use plain neo4j driver - doesn't require APOC
             self.neo4j_driver = GraphDatabase.driver(neo4j_url, auth=(neo4j_user, neo4j_pass))
-
-            # Test connection with a simple query
             with self.neo4j_driver.session() as session:
-                result = session.run("RETURN 1 as test")
-                result.single()
-
+                session.run("RETURN 1 as test").single()
             self.graph_available = True
             print("[OK] Knowledge graph connected (direct Cypher)")
-
-            # Optionally try LangChain QA chain (needs APOC - usually unavailable)
-            try:
-                self.graph = Neo4jGraph(url=neo4j_url, username=neo4j_user, password=neo4j_pass)
-                cypher_prompt = PromptTemplate(
-                    input_variables=["schema", "question"],
-                    template="""You are a Neo4j expert. Write a Cypher query for this question.
-
-Schema: {schema}
-Question: {question}
-
-Rules:
-- Use MATCH to find patterns
-- Use WHERE for filtering
-- LIMIT results to 10
-- Return only the Cypher query
-
-Cypher Query:"""
-                )
-
-                self.graph_chain = GraphCypherQAChain.from_llm(
-                    llm=self.llm,
-                    graph=self.graph,
-                    cypher_prompt=cypher_prompt,
-                    verbose=True,
-                    return_intermediate_steps=True
-                )
-                print("[OK] LangChain QA Chain available (APOC found)")
-            except Exception as chain_error:
-                # APOC not available - that's OK, we can still use direct Cypher
-                print(f"[INFO] LangChain QA Chain unavailable (APOC plugin not installed)")
-
         except Exception as e:
             print(f"[WARN] Neo4j connection failed: {e}")
             self.graph_available = False
