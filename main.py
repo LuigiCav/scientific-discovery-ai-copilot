@@ -45,7 +45,7 @@ def run_complete_pipeline(file_path: str):
 
     df = load_and_parse_standard_data(file_path)
     if df.empty:
-        print("❌ No valid papers. Aborting.")
+        print("No valid papers. Aborting.")
         return
 
     # Step 2: Vector DB
@@ -64,7 +64,7 @@ def run_complete_pipeline(file_path: str):
     export_neo4j_csvs(df, out_dir="./neo4j/import", export_keywords=True)
     write_neo4j_import_cypher(out_dir="./neo4j/import")
 
-    print("\n⚠️ MANUAL STEP - Import Data to Neo4j:")
+    print("\nMANUAL STEP - Import Data to Neo4j:")
     print("\n   FOR NEO4J DESKTOP:")
     print("   1. In Neo4j Desktop, click on your database")
     print("   2. Click '...' → Open Folder → Import")
@@ -78,7 +78,7 @@ def run_complete_pipeline(file_path: str):
     print("   3. Open Neo4j Browser: http://localhost:7474")
     print("   4. Run: :source /var/lib/neo4j/import/import.cypher")
 
-    input("\n⏸️ Press Enter after Neo4j import is complete...")
+    input("\nPress Enter after Neo4j import is complete...")
 
     # Step 4: Hybrid Search
     print("\n" + "=" * 60)
@@ -107,7 +107,7 @@ def run_search_loop():
     )
 
     print("\n" + "=" * 60)
-    print("🎯 HYBRID SEARCH READY")
+    print("HYBRID SEARCH READY")
     print("=" * 60)
     print("Example queries:")
     print("  - What are the main findings on neural networks?")
@@ -116,10 +116,10 @@ def run_search_loop():
     print("=" * 60)
 
     while True:
-        query = input("\n🔎 Ask (or 'exit'): ").strip()
+        query = input("\nAsk (or 'exit'): ").strip()
 
         if query.lower() in ['exit', 'quit', 'q']:
-            print("\n👋 Goodbye!")
+            print("\nGoodbye!")
             break
 
         if not query:
@@ -129,18 +129,18 @@ def run_search_loop():
 
         # Display answer
         print("\n" + "=" * 60)
-        print(f"📝 ANSWER (Confidence: {result['best_score']:.1%})")
+        print(f"ANSWER (Confidence: {result['best_score']:.1%})")
         print("=" * 60)
         print(result["answer"])
 
         # Graph info
         if result["graph_used"] and result["cypher_query"]:
-            print("\n🔗 Cypher Query:")
+            print("\nCypher Query:")
             print(f"```\n{result['cypher_query']}\n```")
 
         # Sources
         if result["sources"]:
-            print("\n📚 SOURCES:")
+            print("\nSOURCES:")
             for i, meta in enumerate(result["sources"]):
                 sim = result["similarities"][i]
                 print(f"\n[{i + 1}] {sim:.1%} - {meta.get('title')}")
@@ -158,7 +158,7 @@ def main():
         file_path = get_user_file_path()
 
     if not file_path:
-        print("❌ No file selected. Exiting.")
+        print("No file selected. Exiting.")
         return
 
     run_complete_pipeline(file_path)

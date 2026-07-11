@@ -621,7 +621,7 @@ export default function GraphExplorer({ papers = [], highlightedSources = null }
                     className="bg-gray-900/80 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 pointer-events-auto cursor-pointer hover:bg-gray-900/90 transition-colors"
                     onClick={() => setShowDragHint(false)}
                   >
-                    <span className="text-2xl">👆</span>
+                    <span className="text-2xl"></span>
                     <div>
                       <p className="font-medium">Drag nodes to explore</p>
                       <p className="text-xs text-gray-300">Click anywhere to dismiss</p>

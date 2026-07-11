@@ -71,7 +71,7 @@ export default function ConnectionModal({ connection, onClose, onPaperClick }) {
           {isRelational ? (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6">
               <div className="flex items-center mb-2">
-                <span className="text-lg mr-2">🔗</span>
+                <span className="text-lg mr-2"></span>
                 <h4 className="font-semibold text-emerald-800">Relational Connection</h4>
               </div>
               <p className="text-sm text-emerald-700 mb-3">
@@ -86,7 +86,7 @@ export default function ConnectionModal({ connection, onClose, onPaperClick }) {
           ) : (
             <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
               <div className="flex items-center mb-2">
-                <span className="text-lg mr-2">🧠</span>
+                <span className="text-lg mr-2"></span>
                 <h4 className="font-semibold text-indigo-800">Semantic Connection</h4>
               </div>
               <p className="text-sm text-indigo-700 mb-3">

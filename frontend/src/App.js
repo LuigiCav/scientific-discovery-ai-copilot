@@ -701,11 +701,11 @@ export default function HybridRAGInterface() {
                   </div>
                   <div className="p-5 space-y-4 text-sm">
                     <div>
-                      <h4 className="font-semibold text-gray-800 mb-1">🔍 Hybrid Search</h4>
+                      <h4 className="font-semibold text-gray-800 mb-1">Hybrid Search</h4>
                       <p className="text-gray-600">Combines <span className="font-medium text-indigo-600">Semantic Search</span> (AI embeddings) with <span className="font-medium text-purple-600">Knowledge Graph</span> (Neo4j) for accurate results.</p>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-800 mb-1">💬 Query Types</h4>
+                      <h4 className="font-semibold text-gray-800 mb-1">Query Types</h4>
                       <ul className="text-gray-600 space-y-1 ml-4">
                         <li>• <b>Author queries:</b> "Papers by Kim", "Who collaborated with Davis?"</li>
                         <li>• <b>Topic queries:</b> "Papers about AI", "What topics does Smith research?"</li>
@@ -714,11 +714,11 @@ export default function HybridRAGInterface() {
                       </ul>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-800 mb-1">🤖 LLM Intent Classification</h4>
+                      <h4 className="font-semibold text-gray-800 mb-1">LLM Intent Classification</h4>
                       <p className="text-gray-600">An AI model analyzes your question to determine the best search strategy before querying the database.</p>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-800 mb-1">📊 Dynamic Results</h4>
+                      <h4 className="font-semibold text-gray-800 mb-1">Dynamic Results</h4>
                       <p className="text-gray-600">Returns all papers above 35% relevance threshold (up to 10). More relevant queries = more sources.</p>
                     </div>
                     <div className="pt-2 border-t border-slate-100">

@@ -82,7 +82,7 @@ export default function ContextPanel({ sources = [], totalPapers = 0, query = ''
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-lg">🌐</span>
+          <span className="text-lg"></span>
           <h4 className="font-semibold text-gray-800">Context & Limitations</h4>
         </div>
         <button

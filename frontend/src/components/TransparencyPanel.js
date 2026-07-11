@@ -33,7 +33,7 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
       {/* Header with Icon */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-lg">🎯</span>
+          <span className="text-lg"></span>
           <h4 className="font-semibold text-gray-800">Transparency</h4>
         </div>
         <span className={`px-2 py-1 rounded-full text-xs font-medium

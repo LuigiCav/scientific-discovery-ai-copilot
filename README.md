@@ -60,17 +60,17 @@ Upload your research papers (Excel/CSV) and ask questions in natural language. T
 
 ---
 
-## 📦 Prerequisites
+## Prerequisites
 
 ### Required Software
 
 1. **Python 3.9+**
    - Download: https://www.python.org/downloads/
-   - ✅ Check: `python --version`
+   - Check: `python --version`
 
 2. **Node.js 16+** (for frontend)
    - Download: https://nodejs.org/
-   - ✅ Check: `node --version`
+   - Check: `node --version`
 
 3. **Neo4j Desktop**
    - Download: https://neo4j.com/download/
@@ -79,11 +79,11 @@ Upload your research papers (Excel/CSV) and ask questions in natural language. T
 
 4. **Ollama** (Local LLM)
    - Download: https://ollama.ai/download
-   - ✅ Check: `ollama --version`
+   - Check: `ollama --version`
 
 ---
 
-## ⚙️ Installation
+## Installation
 
 ### Step 1: Clone the Repository
 
@@ -237,17 +237,17 @@ Your browser should automatically open to **http://localhost:3000**
 
 ---
 
-## 🎨 Using the Web Interface
+## Using the Web Interface
 
 ### Step 1: Upload Research Papers
 
 1. Click **"Choose File"** or drag & drop
 2. Select your Excel/CSV file
 3. Wait for processing (~30-60 seconds)
-   - ✅ Data validation
-   - ✅ Vector embeddings creation
-   - ✅ Knowledge graph import to Neo4j
-4. See "✅ System ready!" message
+   - Data validation
+   - Vector embeddings creation
+   - Knowledge graph import to Neo4j
+4. See "System ready!" message
 
 **Required Excel/CSV Columns:**
 - `title` - Paper title
@@ -411,7 +411,7 @@ llm_model="llama3.2:1b"  # Much faster, slightly lower quality
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 ai-knowledge-platform/
@@ -440,7 +440,7 @@ ai-knowledge-platform/
 
 ---
 
-## 🔒 Security Notes
+## Security Notes
 
 ### Environment Variables
 
@@ -466,7 +466,7 @@ The application will raise an error on startup if `NEO4J_PASS` is not set.
 
 ---
 
-## 🚢 Optional: Production Deployment
+## Optional: Production Deployment
 
 ### Option 1: Single Server
 
@@ -487,7 +487,7 @@ npm run build
 
 ---
 
-## 📊 System Requirements
+## System Requirements
 
 **Minimum:**
 - 8GB RAM
@@ -502,19 +502,19 @@ npm run build
 
 ---
 
-## 🎓 Features Overview
+## Features Overview
 
-### ✅ What Works:
+### What Works:
 
-- ✅ Automatic file upload and processing
-- ✅ Semantic search with confidence scores
-- ✅ Knowledge graph queries (author relationships)
-- ✅ Hybrid search combining both approaches
-- ✅ Source citations with links
-- ✅ Real-time query processing
-- ✅ Beautiful web interface
+- Automatic file upload and processing
+- Semantic search with confidence scores
+- Knowledge graph queries (author relationships)
+- Hybrid search combining both approaches
+- Source citations with links
+- Real-time query processing
+- Web-based user interface
 
-### 🚧 Known Limitations:
+### Known Limitations:
 
 - Single user at a time (database locks)
 - English papers only (spaCy model)
@@ -523,7 +523,7 @@ npm run build
 
 ---
 
-## 🆘 Need Help?
+## Need Help?
 
 ### Common Issues Checklist:
 
@@ -544,7 +544,7 @@ npm run build
 
 ---
 
-## 📚 Additional Resources
+## Additional Resources
 
 - **Ollama Documentation**: https://ollama.ai/docs
 - **Neo4j Getting Started**: https://neo4j.com/docs/
@@ -553,11 +553,9 @@ npm run build
 
 ---
 
-## 🎉 You're All Set!
+## Summary
 
-Your Hybrid RAG System should now be running at **http://localhost:3000**
-
-Upload your research papers and start exploring! 🚀
+Once both services are running, the application is available at **http://localhost:3000**. Upload a research-paper dataset (Excel/CSV) to begin querying.
 
 ---
 
@@ -591,15 +589,15 @@ curl http://localhost:3000             # Frontend
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-This project was developed in collaboration with the **Institute of Entrepreneurship, Technology-Management & Innovation (EnTechnon)** at the **Karlsruhe Institute of Technology (KIT)**.
+Contributed by **Luigi Cavuto**.
 
-Special thanks to **Dr. Faisal Saeed Malik** for his guidance and supervision throughout the project.
+This work was carried out at the **Institute of Entrepreneurship, Technology-Management & Innovation (EnTechnon)**, **Karlsruhe Institute of Technology (KIT)**, with special thanks to **Dr. Faisal Saeed Malik** for his guidance and supervision.
 
 ---
 
-**Author:** Luigi Cavuto  
-**Version:** 1.0  
-**Last Updated:** January 2026  
+**Author:** Luigi Cavuto
+**Version:** 1.0
+**Last Updated:** January 2026
 **License:** MIT © 2025 Luigi Cavuto
