@@ -6,8 +6,8 @@
 
 ```bash
 # 1. Clone and setup
-git clone https://github.com/your-repo/ai-knowledge-platform.git
-cd ai-knowledge-platform
+git clone https://github.com/LuigiCav/scientific-discovery-ai-copilot.git
+cd scientific-discovery-ai-copilot
 
 # 2. Setup Python backend
 python -m venv venv
@@ -88,8 +88,8 @@ Upload your research papers (Excel/CSV) and ask questions in natural language. T
 ### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com/your-repo/ai-knowledge-platform.git
-cd ai-knowledge-platform
+git clone https://github.com/LuigiCav/scientific-discovery-ai-copilot.git
+cd scientific-discovery-ai-copilot
 ```
 
 ### Step 2: Create Python Virtual Environment
@@ -591,6 +591,15 @@ curl http://localhost:3000             # Frontend
 
 ---
 
+## 🙏 Acknowledgments
+
+This project was developed in collaboration with the **Institute of Entrepreneurship, Technology-Management & Innovation (EnTechnon)** at the **Karlsruhe Institute of Technology (KIT)**.
+
+Special thanks to **Dr. Faisal Saeed Malik** for his guidance and supervision throughout the project.
+
+---
+
+**Author:** Luigi Cavuto  
 **Version:** 1.0  
 **Last Updated:** January 2026  
-**License:** MIT
+**License:** MIT © 2025 Luigi Cavuto

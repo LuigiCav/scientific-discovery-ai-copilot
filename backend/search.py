@@ -359,13 +359,13 @@ Category:"""
                 if author_name:
                     # Case-insensitive search using toLower()
                     search_name = author_name.lower()
-                    cypher = f"""
+                    cypher = """
                     MATCH (a:Author)-[:AUTHORED]->(p:Paper)
-                    WHERE toLower(a.name) CONTAINS '{search_name}'
+                    WHERE toLower(a.name) CONTAINS $name
                     RETURN a.name as author, p.title as title, p.doi as doi
                     LIMIT 10
                     """
-                    results = self._run_cypher(cypher)
+                    results = self._run_cypher(cypher, {"name": search_name})
 
                     if results:
                         result_text = f"Found {len(results)} paper(s) by authors matching '{author_name}':\n"
@@ -378,13 +378,13 @@ Category:"""
                     else:
                         # Try last name only
                         last_name = author_name.split()[-1].lower()
-                        cypher = f"""
+                        cypher = """
                         MATCH (a:Author)-[:AUTHORED]->(p:Paper)
-                        WHERE toLower(a.name) CONTAINS '{last_name}'
+                        WHERE toLower(a.name) CONTAINS $name
                         RETURN a.name as author, p.title as title, p.doi as doi
                         LIMIT 10
                         """
-                        results = self._run_cypher(cypher)
+                        results = self._run_cypher(cypher, {"name": last_name})
 
                         if results:
                             result_text = f"Found {len(results)} paper(s) by authors with last name '{last_name}':\n"
@@ -406,13 +406,13 @@ Category:"""
                     # Build dynamic Cypher query for N authors
                     match_clauses = []
                     where_clauses = []
+                    params = {}
                     for i, author in enumerate(authors):
                         match_clauses.append(f"(a{i}:Author)-[:AUTHORED]->(p)")
-                        # Use CONTAINS for flexible matching (handles "Last, First" format)
-                        author_lower = author.lower()
-                        # Try matching by last name (first part before comma) for better accuracy
+                        # Match by last name (first part before comma) for better accuracy
                         last_name = author.split(',')[0].strip().lower() if ',' in author else author.lower()
-                        where_clauses.append(f"toLower(a{i}.name) CONTAINS '{last_name}'")
+                        where_clauses.append(f"toLower(a{i}.name) CONTAINS $a{i}")
+                        params[f"a{i}"] = last_name
 
                     cypher = f"""
                     MATCH (p:Paper)
@@ -422,7 +422,7 @@ Category:"""
                     LIMIT 10
                     """
                     print(f"   [DEBUG] Multi-author Cypher: {cypher}")
-                    results = self._run_cypher(cypher)
+                    results = self._run_cypher(cypher, params)
 
                     if results:
                         result_text = f"Found {len(results)} publication(s) co-authored by {' and '.join(authors)}:\n"
@@ -447,14 +447,14 @@ Category:"""
                     if author_name:
                         search_name = author_name.lower()
                         last_name = search_name.split(',')[0].strip() if ',' in search_name else search_name
-                        cypher = f"""
+                        cypher = """
                         MATCH (a1:Author)-[:AUTHORED]->(p:Paper)<-[:AUTHORED]-(a2:Author)
-                        WHERE toLower(a1.name) CONTAINS '{last_name}'
+                        WHERE toLower(a1.name) CONTAINS $name
                         AND a1 <> a2
                         RETURN DISTINCT a2.name as collaborator, p.title as paper, p.doi as doi
                         LIMIT 10
                         """
-                        results = self._run_cypher(cypher)
+                        results = self._run_cypher(cypher, {"name": last_name})
 
                         if results:
                             result_text = f"Authors who collaborated with {author_name}:\n"
@@ -538,15 +538,15 @@ Category:"""
                 author_name = extract_author_name(query)
                 if author_name:
                     search_name = author_name.lower()
-                    cypher = f"""
+                    cypher = """
                     MATCH (a:Author)-[:AUTHORED]->(p:Paper)-[:HAS_KEYWORD]->(k:Keyword)
-                    WHERE toLower(a.name) CONTAINS '{search_name}'
+                    WHERE toLower(a.name) CONTAINS $name
                     WITH a.name as author, k.name as keyword, k.type as type, count(p) as paper_count, collect(DISTINCT p.title) as papers
                     RETURN author, keyword, type, paper_count, papers
                     ORDER BY paper_count DESC
                     LIMIT 20
                     """
-                    results = self._run_cypher(cypher)
+                    results = self._run_cypher(cypher, {"name": search_name})
 
                     if results:
                         # Group by author
@@ -566,13 +566,13 @@ Category:"""
                                 result_text += f"  • {kw}\n"
 
                         # Also get DOIs for sources
-                        doi_cypher = f"""
+                        doi_cypher = """
                         MATCH (a:Author)-[:AUTHORED]->(p:Paper)
-                        WHERE toLower(a.name) CONTAINS '{search_name}'
+                        WHERE toLower(a.name) CONTAINS $name
                         RETURN p.doi as doi
                         LIMIT 10
                         """
-                        doi_results = self._run_cypher(doi_cypher)
+                        doi_results = self._run_cypher(doi_cypher, {"name": search_name})
                         dois = [r['doi'] for r in doi_results if r.get('doi')]
 
                         return {"success": True, "cypher": cypher, "result": result_text, "dois": dois}
@@ -625,6 +625,85 @@ Category:"""
         except Exception as e:
             return {"success": False, "error": str(e), "result": f"Error: {e}"}
 
+    def _fetch_graph_sources(self, query: str, graph_dois: list):
+        """
+        Fetch metadata for papers found through the knowledge graph.
+        When the query names a topic (e.g. "... about service quality"), re-rank
+        those papers by semantic relevance to that topic. Returns (sources,
+        similarities) as two aligned lists.
+        """
+        import re
+
+        unique_dois = list(dict.fromkeys(graph_dois))
+        if not unique_dois:
+            return [], []
+
+        try:
+            topic_match = re.search(
+                r'(?:about|on|regarding)\s+([^?]+?)(?:\s+by\s+|\s*\??$)',
+                query, re.IGNORECASE
+            )
+            topic = topic_match.group(1).strip() if topic_match else None
+
+            # Hybrid: author's papers ranked by relevance to the requested topic
+            if topic and len(unique_dois) > 1:
+                data = self.collection.get(ids=unique_dois, include=["metadatas", "embeddings"])
+                metas = data.get("metadatas") or []
+                embs = data.get("embeddings")
+                if metas and embs is not None and len(embs):
+                    import numpy as np
+                    topic_emb = self.vector_model.encode(topic, normalize_embeddings=True)
+                    scored = []
+                    for i, meta in enumerate(metas):
+                        sim = float(np.dot(topic_emb, embs[i])) if i < len(embs) else 0.5
+                        scored.append((meta, sim))
+                    scored.sort(key=lambda x: x[1], reverse=True)
+                    print(f"   [GRAPH] Ranked {len(scored)} graph papers by topic '{topic}'")
+                    return [m for m, _ in scored], [s for _, s in scored]
+
+            # Plain fetch (no topic ranking) - graph matches are treated as exact
+            data = self.collection.get(ids=unique_dois, include=["metadatas"])
+            metas = data.get("metadatas") or []
+            return metas, [1.0] * len(metas)
+        except Exception as e:
+            print(f"   [WARN] Could not fetch graph metadata: {e}")
+            return [], []
+
+    def _format_source(self, index: int, meta: dict) -> str:
+        """Format a single source paper for the LLM prompt with a [n] citation tag."""
+        title = safe_str(meta.get("title", "")) or "Unknown"
+        authors = safe_str(meta.get("authors", ""))
+        first_author = authors.split(";")[0].split(",")[0].strip() if authors else "Unknown"
+        year = safe_str(meta.get("year", "")) or safe_str(meta.get("date", ""))
+        abstract = (safe_str(meta.get("abstract", ""))
+                    or safe_str(meta.get("abstract_snippet", ""))
+                    or "No abstract available")
+        return f"[{index + 1}] {title} ({first_author}, {year[:4]}): {abstract}"
+
+    def _build_answer_prompt(self, query: str, source_context: str, graph_context: str = "") -> str:
+        """Build the grounded-answer prompt for the LLM."""
+        graph_block = ""
+        if graph_context:
+            graph_block = (
+                "\nGRAPH CONTEXT (relationships found in the knowledge graph):\n"
+                f"{graph_context}\n"
+            )
+        return f"""You are a research assistant. Answer the question ONLY using the provided sources.
+
+QUESTION: {query}
+
+SOURCES:
+{source_context}
+{graph_block}
+CRITICAL RULES:
+1. FIRST, check if ANY of the sources above actually discuss the topic in the QUESTION.
+2. If NONE of the sources are relevant, respond EXACTLY with:
+   "I cannot answer this question based on the available research papers. The uploaded documents do not contain relevant information about this topic. Please try a different question related to the papers in your dataset."
+3. Do NOT use your general knowledge - ONLY use information from the sources.
+4. When you answer, cite sources as [1], [2], [3] and keep it to 2-3 paragraphs.
+
+ANSWER:"""
+
     def hybrid_answer(self, query: str):
         """Main hybrid search method"""
         import time as time_module
@@ -641,12 +720,11 @@ Category:"""
         }
         total_start = time_module.time()
 
-        # Always check if graph search could be useful
+        # Decide whether the query needs the knowledge graph
         use_graph = self.should_use_graph(query)
         print(f"\n[CHECK] Graph search needed: {use_graph}")
 
-        # ALWAYS run both searches for comprehensive results
-        # Step 1: Semantic search
+        # Step 1: Semantic search (always runs)
         print("\n[SEARCH] Running semantic search...")
         step_start = time_module.time()
         vector_results, similarities, best_score = self.semantic_search(query)
@@ -655,27 +733,31 @@ Category:"""
         transparency["steps"].append({
             "name": "Semantic Search",
             "description": f"Searched {self.collection.count()} documents using sentence embeddings",
-            "result": f"Found {len(similarities) if similarities else 0} relevant papers (best match: {best_score:.1%})" if similarities else "No semantic matches found"
+            "result": f"Found {len(similarities)} relevant papers (best match: {best_score:.1%})" if similarities else "No semantic matches found"
         })
 
-        # Step 2: ALWAYS run graph search when graph is available (for better accuracy)
+        # Step 2: Knowledge-graph search (runs ONCE, only when the query needs it)
         graph_response = None
+        graph_context = ""
+        cypher_query = None
         graph_dois = []
-        if self.graph_available:
+        if self.graph_available and use_graph:
             print("\n[GRAPH] Running knowledge graph search...")
             step_start = time_module.time()
             graph_response = self.graph_search(query)
             transparency["timing"]["graph_search"] = round(time_module.time() - step_start, 2)
 
             if graph_response.get("success"):
+                graph_context = graph_response.get("result", "") or ""
+                cypher_query = graph_response.get("cypher")
+                graph_dois = graph_response.get("dois", []) or []
                 transparency["methods_used"].append("Knowledge Graph (Neo4j)")
                 transparency["steps"].append({
                     "name": "Graph Search",
                     "description": "Queried Neo4j knowledge graph for structured relationships",
-                    "result": "Found results via graph query",
-                    "cypher": graph_response.get("cypher")
+                    "result": f"Found {len(graph_dois)} matching paper(s)" if graph_dois else "Found graph results",
+                    "cypher": cypher_query
                 })
-                graph_dois = graph_response.get("dois", [])
                 print(f"[OK] Graph search found {len(graph_dois)} matching DOIs")
             else:
                 transparency["steps"].append({
@@ -683,60 +765,44 @@ Category:"""
                     "description": "Queried Neo4j knowledge graph",
                     "result": graph_response.get("error", "No graph results found")
                 })
-                print(f"[INFO] Graph search: {graph_response.get('result', 'No results')[:100]}")
+                print(f"[INFO] Graph search: {str(graph_response.get('result', 'No results'))[:100]}")
+        else:
+            transparency["steps"].append({
+                "name": "Graph Search",
+                "description": "Skipped - query doesn't need graph patterns" if self.graph_available else "Knowledge graph unavailable",
+                "result": "Not needed for this query type" if self.graph_available else "Neo4j not connected"
+            })
 
-        # Step 3: Combine results - prioritize graph results for author/collaboration queries
-        # If graph found specific papers, use those; otherwise fall back to semantic
+        # Step 3: Build the candidate source set.
+        # Papers found through the graph take priority (with topic re-ranking when the
+        # query names a topic); otherwise we fall back to the semantic matches.
+        graph_sources, graph_similarities = [], []
         if graph_dois:
             print(f"[COMBINE] Using graph results as primary source ({len(graph_dois)} papers)")
-            try:
-                # Get metadata from vector store for graph DOIs
-                # Handle potential duplicates
-                unique_dois = list(dict.fromkeys(graph_dois))
-                graph_metadata = self.collection.get(
-                    ids=unique_dois,
-                    include=["metadatas"]
-                )
-                if graph_metadata and graph_metadata.get("metadatas"):
-                    # Graph found specific papers - use these as primary results
-                    sources = graph_metadata["metadatas"]
-                    similarities = [1.0] * len(sources)  # Graph matches are exact
-                    best_score = 1.0
+            graph_sources, graph_similarities = self._fetch_graph_sources(query, graph_dois)
 
-                    transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
+        # 3a) Graph produced a structured list answer (e.g. "list all authors") with no
+        #     specific papers to cite -> return that list directly.
+        graph_is_list_answer = bool(
+            graph_context
+            and not graph_sources
+            and "No publications found" not in graph_context
+            and "No results" not in graph_context
+        )
+        if graph_is_list_answer:
+            transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
+            return {
+                "answer": graph_context,
+                "sources": [],
+                "similarities": [],
+                "best_score": 0,
+                "graph_used": True,
+                "cypher_query": cypher_query,
+                "transparency": transparency
+            }
 
-                    return {
-                        "answer": graph_response["result"],
-                        "sources": sources,
-                        "similarities": similarities,
-                        "best_score": best_score,
-                        "graph_used": True,
-                        "cypher_query": graph_response.get("cypher"),
-                        "transparency": transparency
-                    }
-            except Exception as e:
-                print(f"   [WARN] Could not fetch graph metadata: {e}")
-
-        # If no graph results with DOIs but graph had a text answer, still use it
-        if graph_response and graph_response.get("success") and graph_response.get("result"):
-            graph_text = graph_response.get("result", "")
-            # Check if graph found meaningful results (not just "no results" messages)
-            if graph_text and "No publications found" not in graph_text and "No results" not in graph_text:
-                # Graph has useful info but no DOIs - return graph answer
-                transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
-                return {
-                    "answer": graph_text,
-                    "sources": [],
-                    "similarities": [],
-                    "best_score": 0,
-                    "graph_used": True,
-                    "cypher_query": graph_response.get("cypher"),
-                    "transparency": transparency
-                }
-
-        # Fall back to semantic results if no graph results
-        if vector_results is None:
-            # No results from either search
+        # 3b) Nothing found by either method.
+        if vector_results is None and not graph_sources:
             transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
             no_result_msg = "No relevant papers found in the database."
             if graph_response and graph_response.get("result"):
@@ -750,173 +816,35 @@ Category:"""
                 "transparency": transparency
             }
 
-        print(f"[OK] Found {len(vector_results['documents'][0])} papers (score: {best_score:.3f})")
-
-        # Extract context with numbered citations
-        docs = vector_results["documents"][0]
-        metas = vector_results["metadatas"][0]
-        semantic_context = "\n\n".join([
-            f"[{i+1}] {metas[i].get('title', 'Unknown')} ({metas[i].get('authors', 'Unknown').split(';')[0].split(',')[0]}, {metas[i].get('date', '')[:4]}): {doc}"
-            for i, doc in enumerate(docs)
-        ])
-
-        graph_context = ""
-        cypher_query = None
-        graph_sources = []  # Sources from graph search
-        graph_similarities = []
-
-        if use_graph:
-            print("\n[GRAPH] Running graph query...")
-            step_start = time_module.time()
-            graph_response = self.graph_search(query)
-            transparency["timing"]["graph_search"] = round(time_module.time() - step_start, 2)
-
-            print(f"   Graph response success: {graph_response.get('success')}")  # DEBUG
-
-            if graph_response["success"]:
-                graph_context = graph_response["result"]
-                cypher_query = graph_response["cypher"]
-                transparency["methods_used"].append("Knowledge Graph (Neo4j)")
-                transparency["steps"].append({
-                    "name": "Graph Search",
-                    "description": "Queried Neo4j knowledge graph for structured relationships",
-                    "result": f"Found graph data using Cypher query",
-                    "cypher": cypher_query
-                })
-                print(f"[OK] Graph query successful")
-                print(f"   Result preview: {graph_context[:100]}...")  # DEBUG
-
-                # Fetch metadata for papers found by graph search
-                graph_dois = graph_response.get("dois", [])
-                if graph_dois:
-                    try:
-                        # Check if query has both author AND topic (e.g., "papers about AI by Smith")
-                        import re
-                        topic_match = re.search(r'(?:about|on|regarding)\s+([^by]+?)(?:\s+by|\s*$)', query, re.IGNORECASE)
-                        has_topic = topic_match is not None
-
-                        if has_topic and len(graph_dois) > 1:
-                            # Hybrid: Graph found author's papers, now rank by topic relevance
-                            topic = topic_match.group(1).strip()
-                            print(f"   Hybrid query detected: ranking by topic '{topic}'")
-
-                            # Get embeddings for the topic and graph papers
-                            topic_emb = self.vector_model.encode(topic, normalize_embeddings=True)
-
-                            graph_results = self.collection.get(
-                                ids=graph_dois,
-                                include=["metadatas", "embeddings"]
-                            )
-
-                            if graph_results and graph_results.get("metadatas"):
-                                # Calculate similarity to topic for each paper
-                                import numpy as np
-                                embeddings = graph_results.get("embeddings", [])
-                                scored_papers = []
-
-                                for i, meta in enumerate(graph_results["metadatas"]):
-                                    if embeddings and i < len(embeddings):
-                                        sim = float(np.dot(topic_emb, embeddings[i]))
-                                    else:
-                                        sim = 0.5  # Default if no embedding
-                                    scored_papers.append((meta, sim))
-
-                                # Sort by topic relevance
-                                scored_papers.sort(key=lambda x: x[1], reverse=True)
-                                graph_sources = [p[0] for p in scored_papers]
-                                graph_similarities = [p[1] for p in scored_papers]
-                                print(f"   Ranked {len(graph_sources)} papers by topic relevance")
-                        else:
-                            # Pure author query - just get metadata
-                            graph_results = self.collection.get(
-                                ids=graph_dois,
-                                include=["metadatas"]
-                            )
-                            if graph_results and graph_results.get("metadatas"):
-                                graph_sources = graph_results["metadatas"]
-                                graph_similarities = [1.0] * len(graph_sources)
-                                print(f"   Retrieved {len(graph_sources)} source(s) from graph DOIs")
-                    except Exception as e:
-                        print(f"   Could not fetch graph DOIs: {e}")
-            else:
-                transparency["steps"].append({
-                    "name": "Graph Search",
-                    "description": "Attempted graph query but no results found",
-                    "result": graph_response.get('error', 'No matching pattern')
-                })
-                print(f"[WARN] Graph query failed: {graph_response.get('error')}")
+        # Choose the primary sources for answer synthesis
+        if graph_sources:
+            final_sources = graph_sources
+            final_similarities = graph_similarities
+            final_score = max(graph_similarities) if graph_similarities else 1.0
         else:
-            transparency["steps"].append({
-                "name": "Graph Search",
-                "description": "Skipped - query doesn't require graph patterns",
-                "result": "Not needed for this query type"
-            })
-            print("\n[SEMANTIC] Semantic only (no graph needed)")
+            final_sources = vector_results["metadatas"][0]
+            final_similarities = similarities
+            final_score = best_score
 
-        # Generate answer
+        print(f"[OK] Answering from {len(final_sources)} source(s) (score: {final_score:.3f})")
+
+        # Step 4: Build the grounded context for the LLM from the chosen sources
+        source_context = "\n\n".join(
+            self._format_source(i, meta) for i, meta in enumerate(final_sources)
+        )
+
+        # Step 5: Synthesize the final answer with the local LLM
         print("\n[LLM] Generating answer (this may take 10-30 seconds)...")
         step_start = time_module.time()
-
-        # Build context from the right sources
-        if graph_sources:
-            # Use graph sources for the prompt
-            source_context = "\n\n".join([
-                f"[{i+1}] {meta.get('title', 'Unknown')} ({meta.get('authors', 'Unknown').split(';')[0].split(',')[0]}, {meta.get('year', meta.get('date', '')[:4])}): {meta.get('abstract', meta.get('abstract_snippet', 'No abstract'))}"
-                for i, meta in enumerate(graph_sources)
-            ])
-            print(f"   Using {len(graph_sources)} graph source(s) for LLM prompt")
-        else:
-            source_context = semantic_context
-
-        if use_graph and graph_context and "No results found" not in graph_context:
-            prompt = f"""You are a research assistant. Your task is to answer questions ONLY using the provided sources.
-
-QUESTION: {query}
-
-SOURCES:
-{source_context}
-
-GRAPH CONTEXT:
-{graph_context}
-
-CRITICAL RULES:
-1. FIRST, check if ANY of the sources above actually discuss the topic in the QUESTION.
-2. If NONE of the sources are relevant to the question, you MUST respond EXACTLY with:
-   "I cannot answer this question based on the available research papers. The uploaded documents do not contain relevant information about this topic. Please try a different question related to the papers in your dataset."
-3. Do NOT answer questions about topics not covered in the sources.
-4. Do NOT use your general knowledge - ONLY use information from the sources.
-5. If you answer, use [1], [2], [3] citations and write 2-3 paragraphs maximum.
-
-Before answering, ask yourself: "Do these sources actually talk about {query.split()[0:5]}...?" If NO, decline to answer.
-
-ANSWER:"""
-        else:
-            prompt = f"""You are a research assistant. Your task is to answer questions ONLY using the provided sources.
-
-QUESTION: {query}
-
-SOURCES:
-{semantic_context}
-
-CRITICAL RULES:
-1. FIRST, check if ANY of the sources above actually discuss the topic in the QUESTION.
-2. If NONE of the sources are relevant to the question, you MUST respond EXACTLY with:
-   "I cannot answer this question based on the available research papers. The uploaded documents do not contain relevant information about this topic. Please try a different question related to the papers in your dataset."
-3. Do NOT answer questions about topics not covered in the sources.
-4. Do NOT use your general knowledge - ONLY use information from the sources.
-5. If you answer, use [1], [2], [3] citations and write 2-3 paragraphs maximum.
-
-Before answering, ask yourself: "Do these sources actually talk about {query.split()[0:5]}...?" If NO, decline to answer.
-
-ANSWER:"""
+        prompt = self._build_answer_prompt(query, source_context, graph_context if graph_dois else "")
 
         try:
             answer = self.llm.invoke(prompt)
             transparency["timing"]["llm_generation"] = round(time_module.time() - step_start, 2)
-            transparency["methods_used"].append(f"LLM Answer Generation (Ollama)")
+            transparency["methods_used"].append("LLM Answer Generation (Ollama)")
             transparency["steps"].append({
                 "name": "LLM Generation",
-                "description": f"Generated answer using local LLM model",
+                "description": "Generated answer using local LLM model",
                 "result": f"Answer generated in {transparency['timing']['llm_generation']}s"
             })
             print("[OK] Answer generated")
@@ -929,30 +857,15 @@ ANSWER:"""
                 "result": str(e)
             })
 
-        # Total timing
         transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
         transparency["prompt"] = prompt  # Include the actual prompt for full transparency
-
-        # Determine which sources to return
-        # For author/graph queries, prioritize graph sources; otherwise combine
-        graph_used = use_graph and graph_context and "No results found" not in graph_context
-        if graph_sources:
-            # Graph found specific papers - use those as primary sources
-            final_sources = graph_sources
-            final_similarities = graph_similarities
-            final_score = 1.0  # Graph matches are exact
-        else:
-            # Use semantic sources
-            final_sources = vector_results["metadatas"][0]
-            final_similarities = similarities
-            final_score = best_score
 
         return {
             "answer": answer,
             "sources": final_sources,
             "similarities": final_similarities,
             "best_score": final_score,
-            "graph_used": graph_used,
+            "graph_used": bool(graph_dois),
             "cypher_query": cypher_query,
             "transparency": transparency
         }
