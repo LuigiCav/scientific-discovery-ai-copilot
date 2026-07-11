@@ -1,0 +1,203 @@
+# ============================================================
+# Hybrid RAG System - .gitignore
+# ============================================================
+
+# ============================================================
+# Python
+# ============================================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# C extensions
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.Python
+
+# Distribution / packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django/Flask
+*.log
+local_settings.py
+db.sqlite3
+instance/
+.webassets-cache
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# ============================================================
+# Project-Specific (Hybrid RAG System)
+# ============================================================
+# Generated databases - DO NOT COMMIT
+research_index_db/
+research_index_db_*/
+
+# User uploads - DO NOT COMMIT
+uploads/
+
+# Neo4j CSV exports (no longer needed with auto-import)
+neo4j/
+
+# ============================================================
+# Frontend (React)
+# ============================================================
+node_modules/
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Frontend logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# ============================================================
+# IDE / Editors
+# ============================================================
+# PyCharm / IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+\#*\#
+.\#*
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Cursor (AI code editor)
+.cursorignore
+.cursorindexingignore
+
+# ============================================================
+# Operating System
+# ============================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ============================================================
+# Environment & Secrets
+# ============================================================
+.env
+.envrc
+*.env
+
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/
+*.log.*
+
+# ============================================================
+# Temporary Files
+# ============================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+~*
+nul
+
+# ============================================================
+# Documentation Build
+# ============================================================
+docs/_build/
+site/
+
+# ============================================================
+# Optional: Keep sample data for demonstration
+# ============================================================
+# Uncomment the line below if you don't want to commit example Excel files
+# *.xlsx
+# *.xls
+# *.csv
