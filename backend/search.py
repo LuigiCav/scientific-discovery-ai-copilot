@@ -216,10 +216,15 @@ Cypher Query:"""
         print(f"   [DEBUG] No graph patterns matched in: {query_lower}")
         return False
 
-    def semantic_search(self, query: str, max_results: int = 10, threshold: float = 0.35):
+    def semantic_search(self, query: str, max_results: int = 10, threshold: float = 0.25):
         """
         Semantic search via embeddings.
         Returns all papers with similarity >= threshold, up to max_results.
+
+        Note: with the all-MiniLM-L6-v2 model, cosine similarities between a
+        short query and full title+abstract documents typically fall in the
+        0.2-0.4 range even for relevant matches, so the threshold is kept low
+        and the LLM prompt acts as the final relevance gate. Tune if needed.
         """
         q_emb = self.vector_model.encode(query, normalize_embeddings=True).tolist()
 
@@ -680,27 +685,50 @@ Category:"""
                     or "No abstract available")
         return f"[{index + 1}] {title} ({first_author}, {year[:4]}): {abstract}"
 
-    def _build_answer_prompt(self, query: str, source_context: str, graph_context: str = "") -> str:
-        """Build the grounded-answer prompt for the LLM."""
+    def _build_answer_prompt(self, query: str, source_context: str,
+                             graph_context: str = "", graph_backed: bool = False) -> str:
+        """
+        Build the grounded-answer prompt for the LLM.
+
+        graph_backed=True means the sources were retrieved through a definitive
+        knowledge-graph match (author / collaboration / topic), so they are
+        relevant by construction and the model should NOT decline.
+        """
         graph_block = ""
         if graph_context:
             graph_block = (
                 "\nGRAPH CONTEXT (relationships found in the knowledge graph):\n"
                 f"{graph_context}\n"
             )
-        return f"""You are a research assistant. Answer the question ONLY using the provided sources.
+
+        if graph_backed:
+            return f"""You are a research assistant. The papers below were retrieved from a knowledge graph because they match what the QUESTION asks about (an author, a collaboration, or a topic). Use them together with the GRAPH CONTEXT to answer.
 
 QUESTION: {query}
 
 SOURCES:
 {source_context}
 {graph_block}
-CRITICAL RULES:
-1. FIRST, check if ANY of the sources above actually discuss the topic in the QUESTION.
-2. If NONE of the sources are relevant, respond EXACTLY with:
+RULES:
+1. These sources were selected because they match the QUESTION, so treat them as relevant - do NOT reply that you cannot answer.
+2. Use ONLY the information in the sources and graph context; do not add outside knowledge.
+3. Explain what the paper(s) are and how they relate to the question, citing them as [1], [2], [3].
+4. Keep it to 2-3 short paragraphs.
+
+ANSWER:"""
+
+        return f"""You are a research assistant. Answer the QUESTION using ONLY the provided sources.
+
+QUESTION: {query}
+
+SOURCES:
+{source_context}
+{graph_block}
+RULES:
+1. Use ONLY information from the sources; do not use outside knowledge.
+2. Decline ONLY if the sources are clearly about entirely different subjects than the QUESTION. In that case respond EXACTLY with:
    "I cannot answer this question based on the available research papers. The uploaded documents do not contain relevant information about this topic. Please try a different question related to the papers in your dataset."
-3. Do NOT use your general knowledge - ONLY use information from the sources.
-4. When you answer, cite sources as [1], [2], [3] and keep it to 2-3 paragraphs.
+3. Otherwise answer using the relevant sources, citing them as [1], [2], [3], in 2-3 paragraphs.
 
 ANSWER:"""
 
@@ -836,7 +864,11 @@ ANSWER:"""
         # Step 5: Synthesize the final answer with the local LLM
         print("\n[LLM] Generating answer (this may take 10-30 seconds)...")
         step_start = time_module.time()
-        prompt = self._build_answer_prompt(query, source_context, graph_context if graph_dois else "")
+        prompt = self._build_answer_prompt(
+            query, source_context,
+            graph_context if graph_dois else "",
+            graph_backed=bool(graph_dois),
+        )
 
         try:
             answer = self.llm.invoke(prompt)
