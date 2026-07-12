@@ -808,12 +808,12 @@ export default function HybridRAGInterface() {
                     const a1 = names[0] || 'the author';
                     const a2 = names[1] || a1;
                     return [
-                      `papers by ${a1}`,
-                      `who collaborated with ${a1}?`,
-                      `topics by ${a2}`,
-                      'papers about AI',
-                      'list all authors',
-                      'what topics are covered?'
+                      `Papers by ${a1}`,
+                      `Who collaborated with ${a1}?`,
+                      `Topics by ${a2}`,
+                      'Papers about AI',
+                      'List all authors',
+                      'What topics are covered?'
                     ];
                   })().map((q) => (
                     <button
