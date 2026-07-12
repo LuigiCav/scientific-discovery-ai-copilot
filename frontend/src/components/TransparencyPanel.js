@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { Info, ChevronDown, ChevronUp, Gauge } from 'lucide-react';
 
 /**
  * TransparencyPanel - Shows confidence with explanation
@@ -29,12 +29,14 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
     : 0;
 
   return (
-    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-soft">
       {/* Header with Icon */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-lg"></span>
-          <h4 className="font-semibold text-gray-800">Transparency</h4>
+          <span className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+            <Gauge className="w-4 h-4" />
+          </span>
+          <h4 className="font-semibold text-slate-800">Transparency</h4>
         </div>
         <span className={`px-2 py-1 rounded-full text-xs font-medium
           ${level.color === 'green' ? 'bg-green-100 text-green-700' : ''}

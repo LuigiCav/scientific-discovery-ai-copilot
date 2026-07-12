@@ -171,6 +171,15 @@ def load_and_parse_standard_data(file_path: str) -> pd.DataFrame:
     for col in df.columns:
         df[col] = df[col].apply(safe_str)
 
+    # Drop placeholder/invalid author tokens (e.g. "Unknown Author") so they do
+    # not appear as graph nodes or filter options.
+    if "authors" in df.columns:
+        def _clean_authors(s):
+            parts = [p.strip() for p in safe_str(s).split(";")]
+            parts = [p for p in parts if p and not p.lower().startswith("unknown author")]
+            return "; ".join(parts)
+        df["authors"] = df["authors"].apply(_clean_authors)
+
     # Hard quality filter (recommended for graph + embeddings)
     before = len(df)
     df = df[

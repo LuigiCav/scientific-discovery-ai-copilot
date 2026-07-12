@@ -78,12 +78,14 @@ export default function ContextPanel({ sources = [], totalPapers = 0, query = ''
   });
 
   return (
-    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-soft">
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center space-x-2">
-          <span className="text-lg"></span>
-          <h4 className="font-semibold text-gray-800">Context & Limitations</h4>
+          <span className="w-7 h-7 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4" />
+          </span>
+          <h4 className="font-semibold text-slate-800">Context &amp; Limitations</h4>
         </div>
         <button
           onClick={() => setShowDetails(!showDetails)}

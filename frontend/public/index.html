@@ -4,15 +4,62 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="description" content="Hybrid RAG System - Semantic Search + Knowledge Graph" />
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="description" content="AI Knowledge Platform - semantic search, knowledge graph and grounded RAG over scientific papers" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
 
+    <!-- Typeface -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+            },
+            boxShadow: {
+              card: '0 1px 2px rgba(15,23,42,0.04), 0 4px 16px rgba(15,23,42,0.06)',
+              soft: '0 1px 3px rgba(15,23,42,0.05)',
+            },
+            borderRadius: {
+              xl: '0.85rem',
+              '2xl': '1.1rem',
+            },
+          },
+        },
+      };
+    </script>
 
-    <title>Hybrid RAG System</title>
+    <style>
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        background-color: #f5f6f8;
+        color: #0f172a;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      /* Refined, unobtrusive scrollbars */
+      * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+      ::-webkit-scrollbar { width: 10px; height: 10px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 9999px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+    </style>
+
+    <title>AI Knowledge Platform</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

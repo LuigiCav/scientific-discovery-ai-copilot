@@ -1,4 +1,5 @@
 import React from 'react';
+import { BarChart3 } from 'lucide-react';
 
 /**
  * ProportionalityPanel - Shows how much each source contributes to the result
@@ -36,11 +37,13 @@ export default function ProportionalityPanel({ sources = [] }) {
   };
 
   return (
-    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+    <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-soft">
       {/* Header */}
       <div className="flex items-center space-x-2 mb-3">
-        <span className="text-lg"></span>
-        <h4 className="font-semibold text-gray-800">Proportionality</h4>
+        <span className="w-7 h-7 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center">
+          <BarChart3 className="w-4 h-4" />
+        </span>
+        <h4 className="font-semibold text-slate-800">Proportionality</h4>
       </div>
 
       <p className="text-sm text-gray-600 mb-3">
