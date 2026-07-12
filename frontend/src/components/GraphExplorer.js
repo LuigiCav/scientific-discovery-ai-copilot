@@ -68,6 +68,18 @@ export default function GraphExplorer({ papers = [], highlightedSources = null }
     fetchSemanticSimilarities();
   }, [papers]);
 
+  // Initialize the year range to span the loaded papers, so papers from the most
+  // recent year aren't hidden by a stale default (e.g. a 2026 paper under max 2025).
+  useEffect(() => {
+    if (papers.length === 0) return;
+    const years = papers
+      .map(p => parseInt((p.date || '').substring(0, 4)))
+      .filter(y => !isNaN(y));
+    if (years.length) {
+      setFilters(f => ({ ...f, yearRange: { min: Math.min(...years), max: Math.max(...years) } }));
+    }
+  }, [papers]);
+
   // Filter papers based on filters
   const filteredPapers = useMemo(() => {
     return papers.filter(paper => {

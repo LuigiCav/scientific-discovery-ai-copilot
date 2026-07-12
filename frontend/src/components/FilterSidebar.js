@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Filter, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 
 /**
@@ -17,6 +17,13 @@ export default function FilterSidebar({ papers = [], filters, onFilterChange }) 
   const [selectedAuthorKeywords, setSelectedAuthorKeywords] = useState(filters?.authorKeywords || []);
   const [selectedIndexKeywords, setSelectedIndexKeywords] = useState(filters?.indexKeywords || []);
   const [selectedRankings, setSelectedRankings] = useState(filters?.rankings || { vhb: [], abdc: [] });
+
+  // Keep the local year range in sync when the parent updates it (e.g. after papers
+  // load and the range is expanded to cover the data). Without this, toggling a
+  // filter would re-send a stale year range and hide recent-year papers.
+  useEffect(() => {
+    if (filters?.yearRange) setYearRange(filters.yearRange);
+  }, [filters?.yearRange?.min, filters?.yearRange?.max]);
 
   // Collapsed States (section header collapse)
   const [collapsed, setCollapsed] = useState({

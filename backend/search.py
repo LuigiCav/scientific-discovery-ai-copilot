@@ -251,6 +251,28 @@ Category:"""
             print(f"   [Intent] Classification failed: {e}")
             return {"intent": "OTHER", "confidence": "error"}
 
+    def _rule_based_intent(self, q: str):
+        """
+        Deterministic intent detection for clear query patterns, preferred over the
+        LLM classifier (which is unreliable on terse/lowercase queries). q is the
+        lower-cased query. Returns an intent string or None.
+        """
+        import re
+        quoted = re.findall(r"['\"][^'\"]+['\"]", q)
+        if re.search(r'collaborat|co-?author|worked?\s+with|\btogether\b|\bjoint\b', q) or len(quoted) >= 2:
+            return "COLLABORATIONS"
+        if re.search(r'(topics?|keywords?)\s+(by|of|from)\b|what\s+does\s+\w+\s+(write|research|study)', q):
+            return "TOPICS_BY_AUTHOR"
+        if re.search(r'papers?\s+by\b|written\s+by\b|wrote\s+by\b|authored\s+by\b|works?\s+by\b', q):
+            return "PAPERS_BY_AUTHOR"
+        if re.search(r'\b(list|show)\b.*\bauthors?\b|\ball\s+authors\b', q):
+            return "LIST_AUTHORS"
+        if re.search(r'\b(list|show|all|which|what)\b.*\b(topics?|keywords?)\b', q):
+            return "LIST_TOPICS"
+        if re.search(r'papers?\s+(about|on)\b|research\s+on\b|related\s+to\b', q):
+            return "PAPERS_BY_TOPIC"
+        return None
+
     def graph_search(self, query: str):
         """Query knowledge graph with direct queries for common patterns"""
         if not self.graph_available:
@@ -264,9 +286,15 @@ Category:"""
             intent_result = self.classify_intent(query)
             intent = intent_result["intent"]
 
+            # Deterministic patterns take precedence over the LLM classification
+            rule_intent = self._rule_based_intent(query_lower)
+            if rule_intent:
+                intent = rule_intent
+                print(f"   [Intent] Rule-based override: {rule_intent}")
+
             # Extract author name more intelligently
             def extract_author_name(text):
-                """Extract author name from query - case insensitive"""
+                """Extract an author name from the query (case-insensitive)."""
                 import re
 
                 # Common words that are NOT names
@@ -274,30 +302,30 @@ Category:"""
                                'written', 'wrote', 'write', 'the', 'a', 'an', 'is', 'are', 'was', 'were',
                                'find', 'show', 'list', 'all', 'about', 'on', 'in', 'by', 'from', 'with',
                                'topics', 'topic', 'does', 'did', 'do', 'research', 'collaborate',
-                               'collaborated', 'work', 'worked', 'keywords', 'keyword'}
+                               'collaborated', 'work', 'worked', 'keywords', 'keyword', 'me', 'and'}
 
-                # Pattern 1: "by/from/of/with [Name]" - name after preposition
-                match = re.search(r'\b(?:by|from|of|with)\s+([A-Z][a-zA-ZäöüßÄÖÜ]*)', text)
+                # Pattern 1: "by/from/of/with [Name]" - name after a preposition (any case)
+                match = re.search(r'\b(?:by|from|of|with)\s+([A-Za-zäöüßÄÖÜ][\w\-]*)', text, re.IGNORECASE)
                 if match:
                     name = match.group(1).strip("?,.")
                     if name.lower() not in common_words:
                         return name
 
-                # Pattern 2: "[Name] write/research/collaborate" - name before verb
-                match = re.search(r'does\s+([A-Z][a-zA-ZäöüßÄÖÜ]*)\s+(?:write|research|work|study)', text)
+                # Pattern 2: "does [Name] write/research/..." (any case)
+                match = re.search(r'does\s+([A-Za-zäöüßÄÖÜ][\w\-]*)\s+(?:write|research|work|study)', text, re.IGNORECASE)
                 if match:
                     name = match.group(1).strip("?,.")
                     if name.lower() not in common_words:
                         return name
 
-                # Pattern 3: Find capitalized word that's not a common word
-                words = text.split()
+                # Pattern 3: first meaningful token - prefer a capitalized word, else any word
+                words = [w.strip("?,.") for w in text.split()]
                 for word in words:
-                    clean_word = word.strip("?,.")
-                    # Must start with uppercase and not be a common word
-                    if clean_word and len(clean_word) > 1 and clean_word[0].isupper():
-                        if clean_word.lower() not in common_words:
-                            return clean_word
+                    if len(word) > 1 and word[0].isupper() and word.lower() not in common_words:
+                        return word
+                for word in words:
+                    if len(word) > 1 and word.isalpha() and word.lower() not in common_words:
+                        return word
 
                 return None
 
@@ -588,7 +616,7 @@ Category:"""
                 return {
                     "success": False,
                     "cypher": None,
-                    "result": "No matching pattern found. Try queries like:\n• 'Papers written by [Author Name]'\n• 'Who collaborated with [Author Name]'\n• 'Papers about [topic]'\n• 'List all authors'\n• 'What topics are covered?'"
+                    "result": "No results found - the author or topic may not be in the uploaded dataset. Try:\n• 'Papers written by [Author Name]'\n• 'Who collaborated with [Author Name]'\n• 'Papers about [topic]'\n• 'List all authors'\n• 'What topics are covered?'"
                 }
 
         except Exception as e:

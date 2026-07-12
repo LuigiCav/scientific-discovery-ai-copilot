@@ -746,7 +746,7 @@ export default function HybridRAGInterface() {
                     <div>
                       <h4 className="font-semibold text-gray-800 mb-1">Query Types</h4>
                       <ul className="text-gray-600 space-y-1 ml-4">
-                        <li>• <b>Author queries:</b> "Papers by Kim", "Who collaborated with Davis?"</li>
+                        <li>• <b>Author queries:</b> "Papers by [author]", "Who collaborated with [author]?"</li>
                         <li>• <b>Topic queries:</b> "Papers about AI", "What topics does Smith research?"</li>
                         <li>• <b>Concept questions:</b> "What is machine learning?"</li>
                         <li>• <b>List queries:</b> "List all authors", "What topics are covered?"</li>
@@ -796,14 +796,26 @@ export default function HybridRAGInterface() {
             {papers.length > 0 && (
               <div className="mt-3 space-y-2">
                 <div className="flex flex-wrap gap-1.5">
-                  {[
-                    "Papers by Smith",
-                    "Who collaborated with Davis?",
-                    "What does Allen write about?",
-                    "Papers about AI",
-                    "Topics by Kim",
-                    "What is machine learning?"
-                  ].map((q) => (
+                  {(() => {
+                    // Build example queries from real authors in the dataset so the
+                    // suggestions actually return results when clicked.
+                    const names = [...new Set(
+                      papers
+                        .flatMap(p => (p.authors || '').split(';'))
+                        .map(a => a.trim().replace(/\s*\(\d+\)/g, '').split(',')[0].trim())
+                        .filter(n => n && n.length > 1)
+                    )];
+                    const a1 = names[0] || 'the author';
+                    const a2 = names[1] || a1;
+                    return [
+                      `papers by ${a1}`,
+                      `who collaborated with ${a1}?`,
+                      `topics by ${a2}`,
+                      'papers about AI',
+                      'list all authors',
+                      'what topics are covered?'
+                    ];
+                  })().map((q) => (
                     <button
                       key={q}
                       onClick={() => setQuery(q)}
