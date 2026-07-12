@@ -905,10 +905,23 @@ export default function HybridRAGInterface() {
                   cypherQuery={results.cypherQuery}
                 />
 
-                {/* Epistemic Panels */}
-                <TransparencyPanel confidence={results.confidence} sources={results.sources} />
-                <ProportionalityPanel sources={results.sources} />
-                <ContextPanel sources={results.sources} totalPapers={papersCount} query={query} />
+                {/* Epistemic Panels - meaningful only for semantic paper retrieval.
+                    A direct knowledge-graph answer (e.g. "list all authors") has no
+                    paper "sources", so the confidence/coverage panels would be
+                    misleading; show a short graph note instead. */}
+                {results.graphUsed && !(results.sources?.length > 0) ? (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
+                    <span className="font-semibold">Knowledge graph result.</span> This answer
+                    comes from an exact structural match in the graph, so semantic confidence
+                    and per-paper sources don't apply here.
+                  </div>
+                ) : (
+                  <>
+                    <TransparencyPanel confidence={results.confidence} sources={results.sources} />
+                    <ProportionalityPanel sources={results.sources} />
+                    <ContextPanel sources={results.sources} totalPapers={papersCount} query={query} />
+                  </>
+                )}
               </div>
             )}
           </div>
