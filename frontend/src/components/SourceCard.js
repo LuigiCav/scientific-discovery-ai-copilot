@@ -9,7 +9,7 @@ import { ExternalLink, ChevronDown, ChevronUp, CheckCircle, BookOpen } from 'luc
  * title, authors, abstract, date, vhbRanking, abdcRanking,
  * journal_name, doi, url, citations
  */
-export default function SourceCard({ source, index }) {
+export default function SourceCard({ source, index, matchType = null }) {
   const [expanded, setExpanded] = useState(false);
 
   // Destructure real fields from data
@@ -66,13 +66,23 @@ export default function SourceCard({ source, index }) {
           {title}
         </h5>
         <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-          <span className={`text-sm px-2 py-1 rounded-full font-medium
-            ${matchPercent >= 80 ? 'bg-green-100 text-green-700' :
-              matchPercent >= 50 ? 'bg-yellow-100 text-yellow-700' :
-              'bg-gray-100 text-gray-600'}
-          `}>
-            {matchPercent}% Match
-          </span>
+          {matchType === 'exact_graph_match' ? (
+            <span className="text-sm px-2 py-1 rounded-full font-medium bg-indigo-100 text-indigo-700">
+              Exact graph evidence
+            </span>
+          ) : matchType === 'corpus_overview' ? (
+            <span className="text-sm px-2 py-1 rounded-full font-medium bg-violet-100 text-violet-700">
+              Representative source
+            </span>
+          ) : (
+            <span className={`text-sm px-2 py-1 rounded-full font-medium
+              ${matchPercent >= 80 ? 'bg-green-100 text-green-700' :
+                matchPercent >= 50 ? 'bg-yellow-100 text-yellow-700' :
+                'bg-gray-100 text-gray-600'}
+            `}>
+              {matchPercent}% Match
+            </span>
+          )}
         </div>
       </div>
 

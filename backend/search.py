@@ -13,6 +13,27 @@ from neo4j import GraphDatabase  # Plain driver for direct Cypher (no APOC neede
 from backend.etl import safe_str
 
 
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_LOCAL_ONLY = os.getenv("EMBEDDING_LOCAL_FILES_ONLY", "true").lower() in (
+    "1", "true", "yes"
+)
+
+
+def load_embedding_model():
+    """Load the cached embedding model without unnecessary hub requests."""
+    try:
+        return SentenceTransformer(
+            EMBEDDING_MODEL, local_files_only=EMBEDDING_LOCAL_ONLY
+        )
+    except OSError as exc:
+        if EMBEDDING_LOCAL_ONLY:
+            raise RuntimeError(
+                f"Embedding model '{EMBEDDING_MODEL}' is not available locally. "
+                "Set EMBEDDING_LOCAL_FILES_ONLY=false once to download it."
+            ) from exc
+        raise
+
+
 def create_documents_and_metadata(df):
     """Prepare documents for embedding"""
     contents, metadatas, ids = [], [], []
@@ -66,7 +87,7 @@ def create_vector_store(contents, metadatas, ids, db_path, collection_name):
 
     print("\n[EMBED] Generating embeddings...")
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    model = load_embedding_model()
     embeddings = model.encode(contents, normalize_embeddings=True).tolist()
 
     # Force close any existing connections
@@ -112,14 +133,15 @@ class HybridSearchEngine:
         # LLM - Using faster model by default
         self.llm = OllamaLLM(
             model=llm_model,
-            temperature=0.7,
-            num_predict=512,  # Limit response length for speed
-            timeout=120  # 2 minutes timeout
+            temperature=0.2,
+            num_predict=int(os.getenv("LLM_NUM_PREDICT", "256")),
+            keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
+            timeout=120
         )
         print(f"[OK] LLM loaded ({llm_model})")
 
         # Vector store
-        self.vector_model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.vector_model = load_embedding_model()
         self.collection = PersistentClient(path=db_path).get_collection(collection_name)
         print("[OK] Vector store connected")
 
@@ -281,16 +303,16 @@ Category:"""
         try:
             query_lower = query.lower()
 
-            # Use LLM to classify intent
-            print("   [Intent] Classifying query...")
-            intent_result = self.classify_intent(query)
-            intent = intent_result["intent"]
-
-            # Deterministic patterns take precedence over the LLM classification
+            # Resolve clear structural questions without calling the LLM. This
+            # is both more reliable and much faster for exact graph lookups.
             rule_intent = self._rule_based_intent(query_lower)
             if rule_intent:
                 intent = rule_intent
-                print(f"   [Intent] Rule-based override: {rule_intent}")
+                print(f"   [Intent] Rule-based classification: {rule_intent}")
+            else:
+                print("   [Intent] No deterministic match; classifying with LLM...")
+                intent_result = self.classify_intent(query)
+                intent = intent_result["intent"]
 
             # Extract author name more intelligently
             def extract_author_name(text):
@@ -454,16 +476,31 @@ Category:"""
                         results = self._run_cypher(cypher, {"name": last_name})
 
                         if results:
-                            result_text = f"Authors who collaborated with {author_name}:\n"
-                            collaborators = set()
-                            dois = []
+                            papers = {}
                             for r in results:
-                                collaborators.add(r['collaborator'])
-                                if r.get('doi'):
-                                    dois.append(r['doi'])
-                            for collab in collaborators:
-                                result_text += f"\n• {collab}"
-                            return {"success": True, "cypher": cypher, "result": result_text, "dois": dois}
+                                key = r.get('doi') or r.get('paper')
+                                paper = papers.setdefault(key, {
+                                    "title": r.get('paper'), "doi": r.get('doi'),
+                                    "collaborators": []
+                                })
+                                if r.get('collaborator') not in paper["collaborators"]:
+                                    paper["collaborators"].append(r.get('collaborator'))
+
+                            dois = [p["doi"] for p in papers.values() if p.get("doi")]
+                            sentences = []
+                            for index, paper in enumerate(papers.values(), start=1):
+                                names = paper["collaborators"]
+                                collaborators = (names[0] if len(names) == 1
+                                                 else f"{', '.join(names[:-1])} and {names[-1]}")
+                                sentences.append(
+                                    f"{author_name} collaborated with {collaborators} on "
+                                    f"\"{paper['title']}\" [{index}]."
+                                )
+                            return {
+                                "success": True, "cypher": cypher,
+                                "result": " ".join(sentences), "dois": dois,
+                                "answer_mode": "exact_graph_lookup", "intent": intent
+                            }
 
             # Pattern 3: "papers by same author" or "authors with multiple papers"
             if "same author" in query_lower or "multiple papers" in query_lower:
@@ -536,43 +573,31 @@ Category:"""
                 if author_name:
                     search_name = author_name.lower()
                     cypher = """
-                    MATCH (a:Author)-[:AUTHORED]->(p:Paper)-[:HAS_KEYWORD]->(k:Keyword)
+                    MATCH (a:Author)-[:AUTHORED]->(p:Paper)
                     WHERE toLower(a.name) CONTAINS $name
-                    WITH a.name as author, k.name as keyword, k.type as type, count(p) as paper_count, collect(DISTINCT p.title) as papers
-                    RETURN author, keyword, type, paper_count, papers
-                    ORDER BY paper_count DESC
+                    OPTIONAL MATCH (p)-[:HAS_KEYWORD]->(k:Keyword)
+                    RETURN a.name as author, p.title as title, p.doi as doi,
+                           collect(DISTINCT k.name) as keywords
                     LIMIT 20
                     """
                     results = self._run_cypher(cypher, {"name": search_name})
 
                     if results:
-                        # Group by author
-                        authors = {}
-                        dois = []
+                        dois = list(dict.fromkeys(r['doi'] for r in results if r.get('doi')))
+                        publications = []
                         for r in results:
-                            auth = r['author']
-                            if auth not in authors:
-                                authors[auth] = []
-                            type_label = f" [{r['type']}]" if r.get('type') else ""
-                            authors[auth].append(f"{r['keyword']}{type_label}")
-
-                        result_text = f"Topics/keywords in papers by authors matching '{author_name}':\n"
-                        for auth, keywords in authors.items():
-                            result_text += f"\n**{auth}:**\n"
-                            for kw in keywords[:10]:  # Limit keywords per author
-                                result_text += f"  • {kw}\n"
-
-                        # Also get DOIs for sources
-                        doi_cypher = """
-                        MATCH (a:Author)-[:AUTHORED]->(p:Paper)
-                        WHERE toLower(a.name) CONTAINS $name
-                        RETURN p.doi as doi
-                        LIMIT 10
-                        """
-                        doi_results = self._run_cypher(doi_cypher, {"name": search_name})
-                        dois = [r['doi'] for r in doi_results if r.get('doi')]
-
-                        return {"success": True, "cypher": cypher, "result": result_text, "dois": dois}
+                            keyword_text = ", ".join(k for k in r.get('keywords', []) if k)
+                            suffix = f"; indexed keywords: {keyword_text}" if keyword_text else ""
+                            publications.append(f"- {r['author']} co-authored '{r['title']}'{suffix}")
+                        result_text = (
+                            f"Publications associated with author '{author_name}':\n"
+                            + "\n".join(publications)
+                        )
+                        return {
+                            "success": True, "cypher": cypher,
+                            "result": result_text, "dois": dois,
+                            "intent": intent
+                        }
 
             # Pattern 7: List all keywords/topics
             if intent == "LIST_TOPICS":
@@ -658,10 +683,18 @@ Category:"""
                     print(f"   [GRAPH] Ranked {len(scored)} graph papers by topic '{topic}'")
                     return [m for m, _ in scored], [s for _, s in scored]
 
-            # Plain fetch (no topic ranking) - graph matches are treated as exact
-            data = self.collection.get(ids=unique_dois, include=["metadatas"])
+            # Plain graph matches are structurally exact, but that must not be
+            # represented as 100% semantic similarity. Calculate an independent
+            # query-to-document score for hybrid/generative uses of these papers.
+            data = self.collection.get(ids=unique_dois, include=["metadatas", "embeddings"])
             metas = data.get("metadatas") or []
-            return metas, [1.0] * len(metas)
+            embs = data.get("embeddings")
+            if metas and embs is not None and len(embs):
+                import numpy as np
+                query_emb = self.vector_model.encode(query, normalize_embeddings=True)
+                similarities = [float(np.dot(query_emb, emb)) for emb in embs]
+                return metas, similarities
+            return metas, [0.0] * len(metas)
         except Exception as e:
             print(f"   [WARN] Could not fetch graph metadata: {e}")
             return [], []
@@ -677,8 +710,30 @@ Category:"""
                     or "No abstract available")
         return f"[{index + 1}] {title} ({first_author}, {year[:4]}): {abstract}"
 
+    def _diverse_corpus_sources(self, limit: int = 6) -> list:
+        """Select representative papers spanning the embedding space."""
+        import numpy as np
+
+        data = self.collection.get(include=["metadatas", "embeddings"])
+        metas = data.get("metadatas") or []
+        embeddings = data.get("embeddings")
+        if not metas or embeddings is None or not len(embeddings):
+            return metas[:limit]
+
+        matrix = np.asarray(embeddings, dtype=float)
+        centroid = matrix.mean(axis=0)
+        first = int(np.argmax(matrix @ centroid))
+        selected = [first]
+        while len(selected) < min(limit, len(metas)):
+            similarities = matrix @ matrix[selected].T
+            nearest_selected = similarities.max(axis=1)
+            nearest_selected[selected] = np.inf
+            selected.append(int(np.argmin(nearest_selected)))
+        return [metas[i] for i in selected]
+
     def _build_answer_prompt(self, query: str, source_context: str,
-                             graph_context: str = "", graph_backed: bool = False) -> str:
+                             graph_context: str = "", graph_backed: bool = False,
+                             query_intent: str = None) -> str:
         """
         Build the grounded-answer prompt for the LLM.
 
@@ -693,6 +748,41 @@ Category:"""
                 f"{graph_context}\n"
             )
 
+        if query_intent == "PAPERS_BY_TOPIC":
+            return f"""You are a research-paper discovery assistant. The user wants papers related to a topic, not papers exclusively devoted to that topic.
+
+QUESTION: {query}
+
+RETRIEVED SOURCES:
+{source_context}
+
+RULES:
+1. Treat every retrieved source as a candidate paper related to the requested topic.
+2. Do not reject a paper merely because it studies the topic in a specific application domain.
+3. For each source, write exactly one line of at most 18 words explaining how it addresses the topic.
+4. Start each line with [1], [2], [3]. Do not repeat paper titles; they are already visible in the UI.
+5. The first character of the answer must be "[". Add no introduction, heading, conclusion, or bullet symbol.
+6. Use only title and abstract evidence. If a source is genuinely unrelated, omit it silently.
+
+ANSWER:"""
+
+        if query_intent == "LIST_TOPICS":
+            return f"""You are summarizing the thematic coverage of a research-paper corpus. The sources below are a diverse representative sample selected from the full corpus using embeddings.
+
+QUESTION: {query}
+
+REPRESENTATIVE SOURCES:
+{source_context}
+
+RULES:
+1. Identify exactly 4 broad research themes covered across the representative papers.
+2. Write one line of at most 16 words per theme, starting with a short theme name in bold.
+3. Support every theme with one or more source citations such as [1] or [2][4].
+4. Use only the supplied titles and abstracts. Do not claim that one paper represents the entire corpus.
+5. Start directly with the themes; no introduction or conclusion.
+
+ANSWER:"""
+
         if graph_backed:
             return f"""You are a research assistant. The papers below were retrieved from a knowledge graph because they match what the QUESTION asks about (an author, a collaboration, or a topic). Use them together with the GRAPH CONTEXT to answer.
 
@@ -705,7 +795,9 @@ RULES:
 1. These sources were selected because they match the QUESTION, so treat them as relevant - do NOT reply that you cannot answer.
 2. Use ONLY the information in the sources and graph context; do not add outside knowledge.
 3. Explain what the paper(s) are and how they relate to the question, citing them as [1], [2], [3].
-4. Keep it to 2-3 short paragraphs.
+4. For topic questions, synthesize themes directly from each source's title and abstract. A graph author-paper relationship means the author co-authored that source.
+5. Never describe the bibliographic database name (such as Scopus or WoS) as a research topic.
+6. Keep it concise: at most 2 short paragraphs.
 
 ANSWER:"""
 
@@ -801,6 +893,41 @@ ANSWER:"""
             print(f"[COMBINE] Using graph results as primary source ({len(graph_dois)} papers)")
             graph_sources, graph_similarities = self._fetch_graph_sources(query, graph_dois)
 
+        # Neo4j already contains the complete answer for exact structural
+        # lookups. Avoid a slow generative pass and do not present a categorical
+        # graph match as a semantic confidence score.
+        structural_intent = self._rule_based_intent(query.lower())
+        exact_structural_intents = {
+            # These intents can be answered completely from explicit graph
+            # records. Topic questions still need RAG synthesis over abstracts.
+            "PAPERS_BY_AUTHOR", "COLLABORATIONS", "LIST_AUTHORS", "LIST_TOPICS"
+        }
+        is_exact_graph_lookup = bool(
+            graph_response and graph_response.get("success")
+            and (graph_response.get("answer_mode") == "exact_graph_lookup"
+                 or structural_intent in exact_structural_intents)
+        )
+        if is_exact_graph_lookup:
+            transparency["timing"]["total"] = round(time_module.time() - total_start, 2)
+            transparency["methods_used"].append("Deterministic graph answer")
+            transparency["steps"].append({
+                "name": "Answer construction",
+                "description": "Formatted exact Neo4j records without LLM generation",
+                "result": "Exact structural answer with supporting citations"
+            })
+            return {
+                "answer": graph_context,
+                "sources": graph_sources,
+                "similarities": [None] * len(graph_sources),
+                "best_score": None,
+                "graph_used": True,
+                "match_type": "exact_graph_match",
+                "answer_mode": "deterministic",
+                "query_intent": graph_response.get("intent") or structural_intent,
+                "cypher_query": cypher_query,
+                "transparency": transparency,
+            }
+
         # 3a) Graph produced a structured list answer (e.g. "list all authors") with no
         #     specific papers to cite -> return that list directly.
         graph_is_list_answer = bool(
@@ -837,7 +964,15 @@ ANSWER:"""
             }
 
         # Choose the primary sources for answer synthesis
-        if graph_sources:
+        corpus_overview = bool(
+            structural_intent == "LIST_TOPICS"
+            and not (graph_response and graph_response.get("success"))
+        )
+        if corpus_overview:
+            final_sources = self._diverse_corpus_sources(limit=6)
+            final_similarities = [None] * len(final_sources)
+            final_score = None
+        elif graph_sources:
             final_sources = graph_sources
             final_similarities = graph_similarities
             final_score = max(graph_similarities) if graph_similarities else 1.0
@@ -846,12 +981,23 @@ ANSWER:"""
             final_similarities = similarities
             final_score = best_score
 
-        print(f"[OK] Answering from {len(final_sources)} source(s) (score: {final_score:.3f})")
+        score_text = f"{final_score:.3f}" if final_score is not None else "n/a"
+        print(f"[OK] Answering from {len(final_sources)} source(s) (score: {score_text})")
 
         # Step 4: Build the grounded context for the LLM from the chosen sources
-        source_context = "\n\n".join(
-            self._format_source(i, meta) for i, meta in enumerate(final_sources)
-        )
+        if corpus_overview:
+            # Full abstracts from several diverse papers are expensive for a
+            # CPU-only local LLM. Titles plus stored snippets retain enough
+            # thematic signal for corpus mapping while keeping prompt latency sane.
+            source_context = "\n".join(
+                f"[{i + 1}] {safe_str(meta.get('title'))}: "
+                f"{safe_str(meta.get('abstract_snippet'))[:200]}"
+                for i, meta in enumerate(final_sources)
+            )
+        else:
+            source_context = "\n\n".join(
+                self._format_source(i, meta) for i, meta in enumerate(final_sources)
+            )
 
         # Step 5: Synthesize the final answer with the local LLM
         print("\n[LLM] Generating answer (this may take 10-30 seconds)...")
@@ -860,6 +1006,7 @@ ANSWER:"""
             query, source_context,
             graph_context if graph_dois else "",
             graph_backed=bool(graph_dois),
+            query_intent=(graph_response or {}).get("intent") or structural_intent,
         )
 
         try:
@@ -890,6 +1037,9 @@ ANSWER:"""
             "similarities": final_similarities,
             "best_score": final_score,
             "graph_used": bool(graph_dois),
+            "match_type": "corpus_overview" if corpus_overview else None,
+            "answer_mode": "generative",
+            "query_intent": (graph_response or {}).get("intent") or structural_intent,
             "cypher_query": cypher_query,
             "transparency": transparency
         }

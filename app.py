@@ -13,6 +13,8 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import os
 import tempfile
+import re
+import shutil
 from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
@@ -41,10 +43,12 @@ app = Flask(__name__)
 UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', './uploads')
 DB_PATH = os.getenv('DB_PATH', './research_index_db')
 COLLECTION_NAME = os.getenv('COLLECTION_NAME', 'papers_collection')
+LLM_MODEL = os.getenv('LLM_MODEL', 'llama3.2')
 NEO4J_URL = os.getenv('NEO4J_URL', 'bolt://localhost:7687')
 NEO4J_USER = os.getenv('NEO4J_USER', 'neo4j')
 NEO4J_PASS = os.getenv('NEO4J_PASS')
 FLASK_PORT = int(os.getenv('FLASK_PORT', '5000'))
+FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'false').lower() in ('1', 'true', 'yes')
 
 if not NEO4J_PASS:
     raise ValueError("NEO4J_PASS environment variable is required. Set it in .env file.")
@@ -60,6 +64,51 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
 # Global search engine (initialized after upload)
 search_engine = None
 current_db_path = None  # Track current database path
+
+
+def cleanup_stale_vector_stores(base_path, keep_paths=None):
+    """Remove timestamped Chroma stores left by previous uploads/restarts.
+
+    Only directories matching the exact application-owned pattern
+    ``<DB_PATH>_<unix timestamp>`` are eligible. Locked directories are left in
+    place and reported without failing the upload.
+    """
+    keep = {os.path.normcase(os.path.abspath(p)) for p in (keep_paths or [])}
+    absolute_base = os.path.abspath(base_path)
+    parent = os.path.dirname(absolute_base)
+    prefix = os.path.basename(absolute_base)
+    pattern = re.compile(rf"^{re.escape(prefix)}_\d{{10,}}$")
+    removed = []
+
+    if not os.path.isdir(parent):
+        return removed
+
+    for entry in os.scandir(parent):
+        candidate = os.path.normcase(os.path.abspath(entry.path))
+        if not entry.is_dir() or not pattern.fullmatch(entry.name) or candidate in keep:
+            continue
+        # Defensive boundary check: never remove anything outside DB_PATH's parent.
+        if os.path.commonpath([parent, entry.path]) != parent:
+            continue
+        try:
+            shutil.rmtree(entry.path)
+            removed.append(entry.path)
+        except (PermissionError, OSError) as exc:
+            print(f"[WARN] Could not remove stale vector store {entry.path}: {exc}")
+
+    if removed:
+        print(f"[CLEANUP] Removed {len(removed)} stale ChromaDB store(s)")
+    return removed
+
+
+def release_chroma_clients():
+    """Release Chroma's process-wide systems before deleting stores on Windows."""
+    import gc
+    from chromadb.api.client import SharedSystemClient
+
+    gc.collect()
+    SharedSystemClient.clear_system_cache()
+    gc.collect()
 
 
 def auto_import_to_neo4j(df):
@@ -134,12 +183,9 @@ def auto_import_to_neo4j(df):
 
                 _collect_keywords(row.get("author_keywords", ""), "author", doi)
                 _collect_keywords(row.get("keywords_plus", ""), "index", doi)
-                if "sources" in df.columns:
-                    for kw in split_keywords(row.get("sources", "")):
-                        keyword_links.append({
-                            "keyword_id": make_stable_id("KEYWORD", kw),
-                            "name": kw, "type": "", "paper_id": doi
-                        })
+                # `sources` in Scopus/WoS exports identifies the bibliographic
+                # database (for example "Scopus"), not a research topic. Only
+                # genuine author/index keyword fields belong in the graph.
 
             print(f"[PAPERS] Importing {len(papers)} papers...")
             session.run("""
@@ -216,18 +262,12 @@ def upload_file():
         # Release old ChromaDB connection before creating new store
         if search_engine is not None:
             search_engine = None
-            import gc
-            gc.collect()
-        # Use unique database path to avoid locking issues
+        release_chroma_clients()
+        # Use a unique database path to avoid Windows/Chroma locking issues,
+        # but remove stores from previous uploads so they do not accumulate.
         import time as time_module
         new_db_path = f"{DB_PATH}_{int(time_module.time())}"
-        # Clean up old database if exists
-        if current_db_path and os.path.exists(current_db_path):
-            try:
-                import shutil
-                shutil.rmtree(current_db_path)
-            except Exception:
-                pass  # Ignore cleanup errors
+        cleanup_stale_vector_stores(DB_PATH)
         current_db_path = new_db_path
         contents, metadatas, ids = create_documents_and_metadata(df)
         create_vector_store(contents, metadatas, ids, current_db_path, COLLECTION_NAME)
@@ -244,7 +284,7 @@ def upload_file():
             neo4j_url=NEO4J_URL,
             neo4j_user=NEO4J_USER,
             neo4j_pass=NEO4J_PASS,
-            llm_model="llama3.2"
+            llm_model=LLM_MODEL
         )
 
         # Convert DataFrame to list of dicts for frontend
@@ -260,7 +300,12 @@ def upload_file():
 
     except Exception as e:
         print(f"[ERROR] {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        payload = {'error': str(e)}
+        if os.getenv('FLASK_ERROR_DETAILS', 'false').lower() == 'true':
+            payload['traceback'] = traceback.format_exc()
+        return jsonify(payload), 500
 
 
 @app.route('/api/search', methods=['POST'])
@@ -284,9 +329,22 @@ def search():
         result = search_engine.hybrid_answer(query)
 
         # Format response with all paper details
+        match_type = result.get('match_type')
+        semantic_score = (
+            result.get('best_score')
+            if match_type not in ('exact_graph_match', 'corpus_overview') else None
+        )
+        retrieval_method = (
+            'knowledge_graph' if match_type == 'exact_graph_match'
+            else 'corpus_overview' if match_type == 'corpus_overview'
+            else 'hybrid' if result.get('graph_used', False)
+            else 'semantic'
+        )
         response = {
             'answer': result['answer'],
-            'confidence': result['best_score'],
+            # Backward-compatible field. It represents retrieval relevance, not
+            # confidence in the factual correctness of the generated answer.
+            'confidence': semantic_score,
             'sources': [
                 {
                     'title': meta.get('title'),
@@ -306,6 +364,16 @@ def search():
                 for i, meta in enumerate(result['sources'])
             ],
             'graphUsed': result.get('graph_used', False),
+            'matchType': match_type,
+            'answerMode': result.get('answer_mode', 'generative'),
+            'queryIntent': result.get('query_intent'),
+            'retrieval': {
+                'method': retrieval_method,
+                'matchType': match_type,
+                'semanticSimilarity': semantic_score,
+                'evidenceCount': len(result.get('sources', [])),
+                'llmUsed': result.get('answer_mode', 'generative') != 'deterministic'
+            },
             'cypherQuery': result.get('cypher_query'),
             'transparency': result.get('transparency', {})
         }
@@ -420,4 +488,6 @@ Neo4j: {NEO4J_URL}
 Frontend: {FRONTEND_URL}
     """)
 
-    app.run(debug=True, host='0.0.0.0', port=FLASK_PORT)
+    # The reloader creates a second process and can leave native ML/Chroma
+    # clients in a closed state after a source change. Keep it opt-in.
+    app.run(debug=FLASK_DEBUG, host='0.0.0.0', port=FLASK_PORT)

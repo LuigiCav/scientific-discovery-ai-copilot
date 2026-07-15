@@ -12,16 +12,20 @@ import { Info, ChevronDown, ChevronUp, Gauge } from 'lucide-react';
 export default function TransparencyPanel({ confidence, sources = [] }) {
   const [showExplanation, setShowExplanation] = useState(false);
 
-  const confidencePercent = Math.round(confidence * 100);
+  if (confidence === null || confidence === undefined) return null;
+
+  const relevancePercent = Math.round(confidence * 100);
 
   // Determine confidence level
   const getConfidenceLevel = (percent) => {
-    if (percent >= 80) return { label: 'High', color: 'green' };
-    if (percent >= 50) return { label: 'Medium', color: 'yellow' };
-    return { label: 'Low', color: 'red' };
+    // MiniLM query-to-abstract cosine scores commonly sit around 20-40%,
+    // even for relevant matches. These are retrieval bands, not probabilities.
+    if (percent >= 35) return { label: 'Strong', color: 'green' };
+    if (percent >= 25) return { label: 'Relevant', color: 'yellow' };
+    return { label: 'Weak', color: 'red' };
   };
 
-  const level = getConfidenceLevel(confidencePercent);
+  const level = getConfidenceLevel(relevancePercent);
 
   // Calculate average similarity of sources
   const avgSimilarity = sources.length > 0
@@ -43,15 +47,15 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
           ${level.color === 'yellow' ? 'bg-yellow-100 text-yellow-700' : ''}
           ${level.color === 'red' ? 'bg-red-100 text-red-700' : ''}
         `}>
-          {level.label} Confidence
+          {level.label} Retrieval Relevance
         </span>
       </div>
 
       {/* Confidence Bar */}
       <div className="mb-3">
         <div className="flex justify-between text-sm mb-1">
-          <span className="text-gray-600">Confidence</span>
-          <span className="font-medium text-gray-800">{confidencePercent}%</span>
+          <span className="text-gray-600">Best semantic match</span>
+          <span className="font-medium text-gray-800">{relevancePercent}%</span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-3">
           <div
@@ -60,7 +64,7 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
               ${level.color === 'yellow' ? 'bg-yellow-500' : ''}
               ${level.color === 'red' ? 'bg-red-500' : ''}
             `}
-            style={{ width: `${confidencePercent}%` }}
+            style={{ width: `${relevancePercent}%` }}
           />
         </div>
       </div>
@@ -71,7 +75,7 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
         className="flex items-center space-x-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
       >
         <Info className="w-4 h-4" />
-        <span>How is confidence calculated?</span>
+        <span>How is retrieval relevance calculated?</span>
         {showExplanation ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
       </button>
 
@@ -79,7 +83,7 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
       {showExplanation && (
         <div className="mt-3 p-3 bg-white rounded-lg border border-blue-100 text-sm">
           <p className="text-gray-700 mb-2">
-            <strong>Confidence is based on:</strong>
+            <strong>Retrieval relevance is based on:</strong>
           </p>
           <ul className="space-y-1 text-gray-600">
             <li className="flex items-start">
@@ -98,13 +102,13 @@ export default function TransparencyPanel({ confidence, sources = [] }) {
             <li className="flex items-start">
               <span className="mr-2">•</span>
               <span>
-                <strong>Calculation:</strong> Weighted average of similarity scores
+                <strong>Displayed score:</strong> Highest query-to-paper cosine similarity
               </span>
             </li>
           </ul>
           <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-xs">
-            <strong>Note:</strong> High confidence does not mean the answer is correct.
-            Please verify the sources.
+            <strong>Note:</strong> High retrieval relevance does not prove that the
+            generated answer is correct. Please verify the cited sources.
           </div>
         </div>
       )}

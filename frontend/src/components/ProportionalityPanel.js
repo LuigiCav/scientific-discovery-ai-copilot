@@ -9,7 +9,10 @@ import { BarChart3 } from 'lucide-react';
  * - sources: array - The sources with similarity scores
  */
 export default function ProportionalityPanel({ sources = [] }) {
-  if (!sources || sources.length === 0) {
+  // A normalized contribution for one source is inevitably 100% and conveys
+  // no useful information. Only compare contributions when multiple sources
+  // actually compete to support the answer.
+  if (!sources || sources.length < 2) {
     return null;
   }
 

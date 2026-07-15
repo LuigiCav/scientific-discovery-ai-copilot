@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Search, FileText, Loader, CheckCircle, MessageSquare, Send, ChevronDown, ChevronUp, Home, Eye, Clock, Code, Info, X, Download } from 'lucide-react';
+import { Upload, Search, FileText, Loader, CheckCircle, MessageSquare, Send, ChevronDown, ChevronUp, Home, Eye, Clock, Code, Info, X, Sparkles } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import TransparencyPanel from './components/TransparencyPanel';
 import ProportionalityPanel from './components/ProportionalityPanel';
+import CollaborationEvidence from './components/CollaborationEvidence';
 import SourceCard from './components/SourceCard';
 import ContextPanel from './components/ContextPanel';
 import GraphExplorer from './components/GraphExplorer';
@@ -563,9 +564,10 @@ export default function HybridRAGInterface() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
+    <div className="h-screen flex flex-col bg-[#f6f7fb] app-shell">
+      <div className="h-1 bg-gradient-to-r from-indigo-600 via-violet-500 to-cyan-500 flex-shrink-0" />
       {/* Header */}
-      <header className="bg-white px-6 py-4 flex items-center justify-between flex-shrink-0 shadow-sm">
+      <header className="bg-white/95 backdrop-blur px-6 py-3.5 flex items-center justify-between flex-shrink-0 border-b border-slate-200/80 shadow-[0_1px_12px_rgba(15,23,42,0.04)] z-10">
         <div className="flex items-center space-x-4">
           {uploadStatus !== 'idle' && (
             <button
@@ -576,9 +578,12 @@ export default function HybridRAGInterface() {
               <Home className="w-5 h-5" />
             </button>
           )}
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-lg shadow-indigo-200">
+            <Sparkles className="w-5 h-5" />
+          </div>
           <div>
-            <h1 className="text-xl font-semibold text-gray-800">AI Knowledge Platform</h1>
-            <p className="text-xs text-gray-400">
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">AI Knowledge Platform</h1>
+            <p className="text-[11px] text-slate-400 mt-0.5">
               Based on the 5 epistemic principles (Malik & Terzidis, 2025)
             </p>
           </div>
@@ -706,15 +711,18 @@ export default function HybridRAGInterface() {
         </div>
 
         {/* Right Sidebar: Search & Results */}
-        <div className="w-96 bg-white border-l border-slate-200 flex flex-col flex-shrink-0">
+        <aside className="w-[440px] max-w-[42vw] bg-white border-l border-slate-200 flex flex-col flex-shrink-0 shadow-[-8px_0_24px_rgba(15,23,42,0.035)]">
           {/* Search Header */}
-          <div className="p-4 border-b border-slate-100">
+          <div className="p-5 border-b border-slate-100 bg-gradient-to-b from-white to-slate-50/70">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center">
                 <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center mr-2">
                   <MessageSquare className="w-4 h-4 text-indigo-600" />
                 </div>
-                <h2 className="font-medium text-gray-800">Ask Questions</h2>
+                <div>
+                  <h2 className="font-semibold text-slate-900">Ask your research corpus</h2>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Graph lookup · Semantic search · Grounded RAG</p>
+                </div>
               </div>
               <button
                 onClick={() => setShowAskInfo(true)}
@@ -776,13 +784,13 @@ export default function HybridRAGInterface() {
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder="Ask about authors, topics, or concepts..."
-                className="flex-1 px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-slate-50 focus:bg-white transition-colors"
+                className="flex-1 px-3.5 py-3 border border-slate-200 rounded-xl text-sm focus:ring-4 focus:ring-indigo-100 focus:border-indigo-400 bg-white shadow-sm transition-all outline-none"
                 disabled={papers.length === 0}
               />
               <button
                 onClick={handleSearch}
                 disabled={!query.trim() || searching || papers.length === 0}
-                className="px-3 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+                className="px-3.5 py-2 bg-gradient-to-br from-indigo-600 to-violet-600 text-white rounded-xl hover:shadow-lg hover:shadow-indigo-200 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none transition-all active:scale-95"
               >
                 {searching ? (
                   <Loader className="w-5 h-5 animate-spin" />
@@ -819,7 +827,7 @@ export default function HybridRAGInterface() {
                     <button
                       key={q}
                       onClick={() => setQuery(q)}
-                      className="text-xs px-2.5 py-1 bg-slate-100 text-slate-600 rounded-full hover:bg-indigo-100 hover:text-indigo-700 transition-colors"
+                    className="text-[11px] px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-full hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition-all"
                     >
                       {q}
                     </button>
@@ -830,7 +838,7 @@ export default function HybridRAGInterface() {
           </div>
 
           {/* Results Area */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto bg-[#fafbfe]">
             {!results && !searching && (
               <div className="h-full flex items-center justify-center p-4">
                 <div className="text-center">
@@ -868,18 +876,20 @@ export default function HybridRAGInterface() {
             )}
 
             {showResults && results && (
-              <div className="p-4 space-y-4">
+              <div className="p-5 space-y-5">
                 {/* Answer */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium text-gray-800">Answer</h3>
+                    <h3 className="font-semibold text-slate-900 flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-indigo-500" /> Answer
+                    </h3>
                     {results.graphUsed && (
                       <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-full text-xs font-medium">
                         Knowledge Graph
                       </span>
                     )}
                   </div>
-                  <div className="p-4 bg-slate-50 rounded-xl text-sm text-gray-700 leading-relaxed">
+                  <div className="p-5 bg-white rounded-2xl text-[13px] text-slate-700 leading-6 border border-slate-200 shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
                     <AnswerWithCitations answer={results.answer} sources={results.sources} />
                   </div>
                 </div>
@@ -893,10 +903,20 @@ export default function HybridRAGInterface() {
                     </h4>
                     <div className="space-y-2">
                       {results.sources.map((source, idx) => (
-                        <SourceCard key={idx} source={source} index={idx + 1} />
+                        <SourceCard
+                          key={idx}
+                          source={source}
+                          index={idx + 1}
+                          matchType={results.matchType}
+                        />
                       ))}
                     </div>
                   </div>
+                )}
+
+                {/* Query Transparency Panel */}
+                {results.queryIntent === 'COLLABORATIONS' && results.sources?.length > 0 && (
+                  <CollaborationEvidence sources={results.sources} />
                 )}
 
                 {/* Query Transparency Panel */}
@@ -909,7 +929,26 @@ export default function HybridRAGInterface() {
                     A direct knowledge-graph answer (e.g. "list all authors") has no
                     paper "sources", so the confidence/coverage panels would be
                     misleading; show a short graph note instead. */}
-                {results.graphUsed && !(results.sources?.length > 0) ? (
+                {results.matchType === 'corpus_overview' ? (
+                  <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 text-sm text-violet-800">
+                    <div className="font-semibold mb-1">Corpus-wide thematic overview</div>
+                    <p>
+                      Themes were synthesized from {results.sources?.length || 0} diverse representative
+                      papers selected across the embedding space. This is not a query-similarity ranking.
+                    </p>
+                  </div>
+                ) : results.matchType === 'exact_graph_match' ? (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
+                    <div className="font-semibold mb-1">Exact knowledge-graph match</div>
+                    <p>
+                      This result comes directly from an author–paper relationship in Neo4j.
+                      It is an exact structural match, not a semantic confidence percentage.
+                    </p>
+                    <p className="mt-2 text-xs text-indigo-600">
+                      Evidence: {results.sources?.length || 0} supporting paper(s) · No LLM used
+                    </p>
+                  </div>
+                ) : results.graphUsed && !(results.sources?.length > 0) ? (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
                     <span className="font-semibold">Knowledge graph result.</span> This answer
                     comes from an exact structural match in the graph, so semantic confidence
@@ -925,7 +964,7 @@ export default function HybridRAGInterface() {
               </div>
             )}
           </div>
-        </div>
+        </aside>
       </div>
 
       {/* Footer */}

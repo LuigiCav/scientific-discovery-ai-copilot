@@ -7,6 +7,34 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+  --brand-indigo: #4f46e5;
+  --brand-violet: #7c3aed;
+  --surface: #ffffff;
+  --canvas: #f6f7fb;
+}
+
+* { box-sizing: border-box; }
+
+::selection {
+  background: #e0e7ff;
+  color: #312e81;
+}
+
+button, input { font: inherit; }
+
+button:focus-visible, input:focus-visible {
+  outline: 2px solid #818cf8;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .app-shell aside {
+    width: 390px;
+    max-width: 46vw;
+  }
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
